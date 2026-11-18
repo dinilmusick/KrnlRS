@@ -59,6 +59,15 @@ impl Telemetry {
         }
     }
 
+    /// Reconfigure trace retention without changing aggregate metrics.
+    /// Reducing capacity evicts the oldest traces first.
+    pub fn set_capacity(&mut self, capacity: usize) {
+        self.capacity = capacity;
+        while self.recent.len() > capacity {
+            self.recent.pop_front();
+        }
+    }
+
     pub fn enable(&mut self) {
         self.mode = TelemetryMode::Standard;
     }
@@ -211,6 +220,28 @@ mod tests {
         assert_eq!(snapshot.recent[0].correlation_id.as_deref(), Some("trace-42"));
         assert_eq!(snapshot.recent[1].correlation_id.as_deref(), Some("trace-43"));
         assert!(!snapshot.recent[1].succeeded);
+    }
+
+    #[test]
+    fn capacity_reconfiguration_preserves_metrics_and_newest_traces() {
+        let mut telemetry = Telemetry::new(3);
+        telemetry.enable();
+        telemetry.record(trace("first", true));
+        telemetry.record(trace("second", false));
+        telemetry.record(trace("third", true));
+        telemetry.set_capacity(1);
+        let snapshot = telemetry.snapshot();
+        assert_eq!(snapshot.recent.len(), 1);
+        assert_eq!(snapshot.recent[0].operation, "third");
+        assert_eq!(snapshot.operations.len(), 3);
+        telemetry.set_capacity(0);
+        assert!(telemetry.snapshot().recent.is_empty());
+        telemetry.record(trace("fourth", true));
+        assert!(telemetry.snapshot().recent.is_empty());
+        assert_eq!(telemetry.functionality("fourth").unwrap().invocations, 1);
+        telemetry.set_capacity(2);
+        telemetry.record(trace("fifth", true));
+        assert_eq!(telemetry.snapshot().recent[0].operation, "fifth");
     }
 
     #[test]
