@@ -52,10 +52,13 @@ impl Lifecycle {
             (self.state, next),
             (Uninitialized, Initializing)
                 | (Initializing, Ready)
+                | (Initializing, Uninitialized) // failed onInit restores uninitialized
                 | (Ready, Starting)
                 | (Starting, Running)
+                | (Starting, Ready) // failed onStart restores ready
                 | (Running, Stopping)
                 | (Stopping, Stopped)
+                | (Stopping, Running) // failed onStop restores running
                 | (Stopped, Starting)
         );
         if !allowed {
@@ -101,20 +104,58 @@ mod tests {
     }
 
     #[test]
-    fn all_unsupported_transitions_are_rejected() {
+    fn exhaustive_canonical_transition_matrix_preserves_state_on_rejection() {
         use LifecycleState::*;
+        // Canonical KrnlTS packages/core/src/lifecycle/LifecycleManager.ts,
+        // including three error-handler rollback paths.
         let states = [Uninitialized, Initializing, Ready, Starting, Running, Stopping, Stopped];
         for from in states {
             for to in states {
                 let mut lifecycle = Lifecycle { state: from };
-                let valid = matches!((from, to),
-                    (Uninitialized, Initializing) | (Initializing, Ready)
-                    | (Ready, Starting) | (Starting, Running)
-                    | (Running, Stopping) | (Stopping, Stopped)
-                    | (Stopped, Starting));
-                assert_eq!(lifecycle.transition(to).is_ok(), valid, "{from:?} -> {to:?}");
+                let valid = matches!(
+                    (from, to),
+                    (Uninitialized, Initializing)
+                        | (Initializing, Ready)
+                        | (Initializing, Uninitialized)
+                        | (Ready, Starting)
+                        | (Starting, Running)
+                        | (Starting, Ready)
+                        | (Running, Stopping)
+                        | (Stopping, Stopped)
+                        | (Stopping, Running)
+                        | (Stopped, Starting)
+                );
+                let result = lifecycle.transition(to);
+                assert_eq!(result.is_ok(), valid, "{from:?} -> {to:?}");
                 assert_eq!(lifecycle.state(), if valid { to } else { from });
+                if !valid {
+                    assert_eq!(result.unwrap_err(), LifecycleError { from, to });
+                }
             }
         }
+    }
+
+    #[test]
+    fn failed_hooks_rollback_and_permit_retry() {
+        use LifecycleState::*;
+        let mut lifecycle = Lifecycle::new();
+        // onInit rejection: initializing -> uninitialized, then retry.
+        lifecycle.transition(Initializing).unwrap();
+        lifecycle.transition(Uninitialized).unwrap();
+        lifecycle.transition(Initializing).unwrap();
+        lifecycle.transition(Ready).unwrap();
+        // onStart rejection: starting -> ready, then retry.
+        lifecycle.transition(Starting).unwrap();
+        lifecycle.transition(Ready).unwrap();
+        lifecycle.transition(Starting).unwrap();
+        lifecycle.transition(Running).unwrap();
+        // onStop rejection: stopping -> running, then retry.
+        lifecycle.transition(Stopping).unwrap();
+        lifecycle.transition(Running).unwrap();
+        lifecycle.transition(Stopping).unwrap();
+        lifecycle.transition(Stopped).unwrap();
+        lifecycle.transition(Starting).unwrap();
+        lifecycle.transition(Running).unwrap();
+        assert_eq!(lifecycle.state(), Running);
     }
 }
