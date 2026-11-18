@@ -144,7 +144,7 @@ impl Telemetry {
         }
         entry.total_duration = entry.total_duration.saturating_add(trace.elapsed);
         if self.capacity > 0 {
-            if self.recent.len() == self.capacity {
+            while self.recent.len() >= self.capacity {
                 self.recent.pop_front();
             }
             self.recent.push_back(trace);
@@ -242,6 +242,24 @@ mod tests {
         telemetry.set_capacity(2);
         telemetry.record(trace("fifth", true));
         assert_eq!(telemetry.snapshot().recent[0].operation, "fifth");
+    }
+
+    #[test]
+    fn retention_remains_bounded_across_repeated_capacity_changes() {
+        let mut telemetry = Telemetry::new(4);
+        telemetry.enable();
+        for i in 0..20 {
+            telemetry.set_capacity(i % 5);
+            telemetry.record(trace(&format!("op-{i}"), i % 2 == 0));
+            let snapshot = telemetry.snapshot();
+            assert!(snapshot.recent.len() <= i % 5);
+            assert_eq!(snapshot.operations.len(), i + 1);
+        }
+        telemetry.reset();
+        assert!(telemetry.snapshot().operations.is_empty());
+        assert_eq!(telemetry.status(), TelemetryMode::Standard);
+        telemetry.record(trace("after-reset", true));
+        assert_eq!(telemetry.functionality("after-reset").unwrap().invocations, 1);
     }
 
     #[test]
