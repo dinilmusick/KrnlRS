@@ -3,3 +3,6 @@
 
 pub mod lifecycle;
 pub use lifecycle::{Lifecycle, LifecycleError, LifecycleState};
+
+pub mod telemetry;
+pub use telemetry::{InvocationTrace, OperationMetrics, Telemetry, TelemetryMode, TelemetrySnapshot};
