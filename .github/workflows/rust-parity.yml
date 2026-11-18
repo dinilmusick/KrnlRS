@@ -1,0 +1,28 @@
+name: Rust parity verification
+on:
+  push:
+    branches:
+      - feat/rust-service-lifecycle
+      - feat/rust-service-telemetry-core
+  pull_request:
+    branches: [main, feat/rust-service-lifecycle]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: cargo test / fmt / clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Compile and test
+        run: cargo test --all-targets --locked
+      - name: Lint
+        run: cargo clippy --all-targets --locked -- -D warnings
