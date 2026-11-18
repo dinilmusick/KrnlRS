@@ -92,6 +92,34 @@ impl Telemetry {
         }
     }
 
+    /// Execute an operation and record its result without requiring callers to
+    /// manually construct a trace. Errors are returned unchanged.
+    ///
+    /// This instruments a single functionality, not cross-service orchestration.
+    /// Panics are deliberately not caught or converted to successful results.
+    pub fn measure<T, E, F>(
+        &mut self,
+        operation: impl Into<String>,
+        correlation_id: Option<String>,
+        action: F,
+    ) -> Result<T, E>
+    where
+        F: FnOnce() -> Result<T, E>,
+    {
+        if self.mode == TelemetryMode::Off {
+            return action();
+        }
+        let started = std::time::Instant::now();
+        let result = action();
+        self.record(InvocationTrace {
+            operation: operation.into(),
+            correlation_id,
+            elapsed: started.elapsed(),
+            succeeded: result.is_ok(),
+        });
+        result
+    }
+
     /// Record a completed operation. The caller owns timing and correlation.
     /// Disabled telemetry never stores the operation name or trace.
     pub fn record(&mut self, trace: InvocationTrace) {
@@ -167,4 +195,36 @@ mod tests {
         assert!(telemetry.snapshot().recent.is_empty());
         assert_eq!(telemetry.functionality("run").unwrap().invocations, 1);
     }
+    #[test]
+    fn measured_invocations_preserve_results_and_correlation() {
+        let mut telemetry = Telemetry::new(2);
+        telemetry.enable();
+        let ok: Result<i32, &str> =
+            telemetry.measure("calculate", Some("trace-42".into()), || Ok(42));
+        let error: Result<(), &str> =
+            telemetry.measure("calculate", Some("trace-43".into()), || Err("failed"));
+        assert_eq!(ok, Ok(42));
+        assert_eq!(error, Err("failed"));
+        let metrics = telemetry.functionality("calculate").unwrap();
+        assert_eq!((metrics.invocations, metrics.successes, metrics.failures), (2, 1, 1));
+        let snapshot = telemetry.snapshot();
+        assert_eq!(snapshot.recent[0].correlation_id.as_deref(), Some("trace-42"));
+        assert_eq!(snapshot.recent[1].correlation_id.as_deref(), Some("trace-43"));
+        assert!(!snapshot.recent[1].succeeded);
+    }
+
+    #[test]
+    fn off_mode_executes_once_without_recording() {
+        let mut telemetry = Telemetry::default();
+        let mut calls = 0;
+        let result: Result<usize, ()> = telemetry.measure("private", None, || {
+            calls += 1;
+            Ok(calls)
+        });
+        assert_eq!(result, Ok(1));
+        assert_eq!(calls, 1);
+        assert!(telemetry.snapshot().operations.is_empty());
+    }
+
+
 }
