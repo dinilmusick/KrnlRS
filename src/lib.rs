@@ -3,6 +3,8 @@
 //! No Kloks, Floks, Skipo, or Krusbl dependencies.
 #![forbid(unsafe_code)]
 
+pub mod orchestration;
+
 use std::sync::Mutex;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
