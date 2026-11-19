@@ -18,6 +18,7 @@ pub enum ServiceError<E> {
     NotRunning,
     Disposed,
     Poisoned,
+    Busy,
     Execution(E),
 }
 
@@ -119,6 +120,27 @@ impl<F> Service<F> {
         }
         validate(&input).map_err(CheckedServiceError::Validation)?;
         guard.1.execute(input).map_err(CheckedServiceError::Execution)
+    }
+
+    /// Fail-fast invocation for callers that must not wait behind an active
+    /// service operation. Contention is distinct from a poisoned lock.
+    /// A successful lock still enforces the current lifecycle.
+    pub fn try_invoke<I, O, E>(&self, input: I) -> Result<O, ServiceError<E>>
+    where
+        F: Functionality<I, O, E>,
+    {
+        use std::sync::TryLockError;
+        let mut guard = match self.inner.try_lock() {
+            Ok(guard) => guard,
+            Err(TryLockError::WouldBlock) => return Err(ServiceError::Busy),
+            Err(TryLockError::Poisoned(_)) => return Err(ServiceError::Poisoned),
+        };
+        match guard.0 {
+            Lifecycle::Disposed => return Err(ServiceError::Disposed),
+            Lifecycle::Running => {}
+            Lifecycle::Created | Lifecycle::Stopped => return Err(ServiceError::NotRunning),
+        }
+        guard.1.execute(input).map_err(ServiceError::Execution)
     }
 
     pub fn invoke<I, O, E>(&self, input: I) -> Result<O, ServiceError<E>>
@@ -224,6 +246,33 @@ mod tests {
             service.invoke_checked(4, validate),
             Err(CheckedServiceError::Lifecycle(ServiceError::Disposed))
         );
+    }
+
+    #[test]
+    fn try_invoke_is_nonblocking_and_preserves_lifecycle() {
+        use std::sync::mpsc;
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let service = Arc::new(Service::new(move |x: i32| {
+            if x == 1 {
+                entered_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+            }
+            Ok::<_, ()>(x)
+        }));
+        assert_eq!(service.try_invoke(0), Err(ServiceError::NotRunning));
+        service.start().unwrap();
+        let running = Arc::clone(&service);
+        let worker = thread::spawn(move || running.invoke(1));
+        entered_rx.recv().unwrap();
+        assert_eq!(service.try_invoke(2), Err(ServiceError::Busy));
+        release_tx.send(()).unwrap();
+        assert_eq!(worker.join().unwrap(), Ok(1));
+        assert_eq!(service.try_invoke(3), Ok(3));
+        service.stop().unwrap();
+        assert_eq!(service.try_invoke(4), Err(ServiceError::NotRunning));
+        service.dispose().unwrap();
+        assert_eq!(service.try_invoke(5), Err(ServiceError::Disposed));
     }
 
     #[test]
