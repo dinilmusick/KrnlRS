@@ -21,6 +21,15 @@ pub enum ServiceError<E> {
     Execution(E),
 }
 
+/// Distinguishes a rejected input from a failure during service execution.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CheckedServiceError<V, E> {
+    Lifecycle(ServiceError<()>),
+    Validation(V),
+    Execution(E),
+}
+
+
 /// A single service's typed functionality. Implementations own their validation
 /// and return explicit errors; no cross-service dispatch is performed here.
 pub trait Functionality<I, O, E>: Send {
@@ -82,6 +91,34 @@ impl<F> Service<F> {
         let mut guard = self.inner.lock().map_err(|_| ServiceError::Poisoned)?;
         guard.0 = Lifecycle::Disposed;
         Ok(())
+    }
+
+    /// Validate before executing, under the same lifecycle lock. Invalid input
+    /// never reaches functionality, and stopped/disposed services fail closed
+    /// without invoking user-provided validation callbacks.
+    pub fn invoke_checked<I, O, E, V>(
+        &self,
+        input: I,
+        validate: impl FnOnce(&I) -> Result<(), V>,
+    ) -> Result<O, CheckedServiceError<V, E>>
+    where
+        F: Functionality<I, O, E>,
+    {
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| CheckedServiceError::Lifecycle(ServiceError::Poisoned))?;
+        match guard.0 {
+            Lifecycle::Disposed => {
+                return Err(CheckedServiceError::Lifecycle(ServiceError::Disposed));
+            }
+            Lifecycle::Running => {}
+            Lifecycle::Created | Lifecycle::Stopped => {
+                return Err(CheckedServiceError::Lifecycle(ServiceError::NotRunning));
+            }
+        }
+        validate(&input).map_err(CheckedServiceError::Validation)?;
+        guard.1.execute(input).map_err(CheckedServiceError::Execution)
     }
 
     pub fn invoke<I, O, E>(&self, input: I) -> Result<O, ServiceError<E>>
@@ -156,4 +193,40 @@ mod tests {
         service.dispose().unwrap();
         assert_eq!(service.invoke(()), Err(ServiceError::Disposed));
     }
+    #[test]
+    fn checked_invocation_rejects_invalid_inputs_without_execution() {
+        let service = Service::new({
+            let mut calls = 0;
+            move |value: i32| {
+                calls += 1;
+                Ok::<_, &'static str>((value, calls))
+            }
+        });
+        let validate = |value: &i32| {
+            if *value >= 0 { Ok(()) } else { Err("negative") }
+        };
+        assert_eq!(
+            service.invoke_checked(-1, validate),
+            Err(CheckedServiceError::Lifecycle(ServiceError::NotRunning))
+        );
+        service.start().unwrap();
+        assert_eq!(service.invoke_checked(-1, validate), Err(CheckedServiceError::Validation("negative")));
+        assert_eq!(service.invoke_checked(3, validate), Ok((3, 1)));
+        service.dispose().unwrap();
+        assert_eq!(
+            service.invoke_checked(4, validate),
+            Err(CheckedServiceError::Lifecycle(ServiceError::Disposed))
+        );
+    }
+
+    #[test]
+    fn checked_invocation_preserves_execution_errors() {
+        let service = Service::new(|_: i32| Err::<(), _>("execution failed"));
+        service.start().unwrap();
+        assert_eq!(
+            service.invoke_checked(1, |_: &i32| Ok::<(), &'static str>(())),
+            Err(CheckedServiceError::Execution("execution failed"))
+        );
+    }
+
 }
