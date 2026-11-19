@@ -128,7 +128,10 @@ mod tests {
     fn functionality_errors_are_not_silently_swallowed() {
         let service = Service::new(|_: ()| Err::<(), _>("invalid input"));
         service.start().unwrap();
-        assert_eq!(service.invoke(()), Err(ServiceError::Execution("invalid input")));
+        assert_eq!(
+            service.invoke(()),
+            Err(ServiceError::Execution("invalid input"))
+        );
     }
 
     #[test]
