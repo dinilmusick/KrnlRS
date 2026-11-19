@@ -46,10 +46,7 @@ impl<O, E> FunctionalityOrchestration<O, E> {
 
     /// Validates all edges and cycles before executing any functionality.
     /// Ready nodes execute in lexical ID order, giving reproducible ordering.
-    pub fn run(&self) -> Result<BTreeMap<String, O>, OrchestrationError<E>>
-    where
-        O: Clone,
-    {
+    pub fn execution_order(&self) -> Result<Vec<String>, OrchestrationError<E>> {
         for (id, node) in &self.nodes {
             for dep in &node.dependencies {
                 if !self.nodes.contains_key(dep) {
@@ -74,6 +71,15 @@ impl<O, E> FunctionalityOrchestration<O, E> {
                 None => return Err(OrchestrationError::Cycle),
             }
         }
+        Ok(order)
+    }
+
+    /// Preflight the complete graph before invoking any node callback.
+    pub fn run(&self) -> Result<BTreeMap<String, O>, OrchestrationError<E>>
+    where
+        O: Clone,
+    {
+        let order = self.execution_order()?;
         let mut results = BTreeMap::new();
         for id in order {
             let node = &self.nodes[&id];
@@ -128,6 +134,31 @@ mod tests {
         cycle.add(node("a", &["b"], |_| Ok(1))).unwrap();
         cycle.add(node("b", &["a"], |_| Ok(2))).unwrap();
         assert_eq!(cycle.run(), Err(OrchestrationError::Cycle));
+    }
+
+    #[test]
+    fn execution_order_is_stable_and_does_not_execute_nodes() {
+        let calls = Arc::new(Mutex::new(0usize));
+        let mut graph = FunctionalityOrchestration::new();
+        for (id, dependencies) in [("z", vec!["a"]), ("a", vec![]), ("b", vec!["a"])] {
+            let calls = Arc::clone(&calls);
+            graph.add(node(id, &dependencies, move |_| {
+                *calls.lock().unwrap() += 1;
+                Ok(1)
+            })).unwrap();
+        }
+        assert_eq!(graph.execution_order().unwrap(), vec!["a", "b", "z"]);
+        assert_eq!(*calls.lock().unwrap(), 0);
+        assert_eq!(graph.run().unwrap().len(), 3);
+        assert_eq!(*calls.lock().unwrap(), 3);
+    }
+
+    #[test]
+    fn execution_order_rejects_cycles_without_callbacks() {
+        let mut graph = FunctionalityOrchestration::new();
+        graph.add(node("self", &["self"], |_| panic!("must not execute"))).unwrap();
+        assert_eq!(graph.execution_order(), Err(OrchestrationError::Cycle));
+        assert_eq!(graph.run(), Err(OrchestrationError::Cycle));
     }
 
     #[test]
