@@ -143,6 +143,39 @@ impl<F> Service<F> {
         guard.1.execute(input).map_err(ServiceError::Execution)
     }
 
+    /// Nonblocking validated invocation. Contention fails before validation,
+    /// and lifecycle checks run before user callbacks under the same lock.
+    pub fn try_invoke_checked<I, O, E, V>(
+        &self,
+        input: I,
+        validate: impl FnOnce(&I) -> Result<(), V>,
+    ) -> Result<O, CheckedServiceError<V, E>>
+    where
+        F: Functionality<I, O, E>,
+    {
+        use std::sync::TryLockError;
+        let mut guard = match self.inner.try_lock() {
+            Ok(guard) => guard,
+            Err(TryLockError::WouldBlock) => {
+                return Err(CheckedServiceError::Lifecycle(ServiceError::Busy));
+            }
+            Err(TryLockError::Poisoned(_)) => {
+                return Err(CheckedServiceError::Lifecycle(ServiceError::Poisoned));
+            }
+        };
+        match guard.0 {
+            Lifecycle::Disposed => {
+                return Err(CheckedServiceError::Lifecycle(ServiceError::Disposed));
+            }
+            Lifecycle::Running => {}
+            Lifecycle::Created | Lifecycle::Stopped => {
+                return Err(CheckedServiceError::Lifecycle(ServiceError::NotRunning));
+            }
+        }
+        validate(&input).map_err(CheckedServiceError::Validation)?;
+        guard.1.execute(input).map_err(CheckedServiceError::Execution)
+    }
+
     pub fn invoke<I, O, E>(&self, input: I) -> Result<O, ServiceError<E>>
     where
         F: Functionality<I, O, E>,
@@ -283,6 +316,81 @@ mod tests {
             service.invoke_checked(1, |_: &i32| Ok::<(), &'static str>(())),
             Err(CheckedServiceError::Execution("execution failed"))
         );
+    }
+
+    #[test]
+    fn try_checked_rejects_invalid_input_and_preserves_execution_errors() {
+        let service = Service::new(|value: i32| {
+            if value == 7 {
+                Err("execution failed")
+            } else {
+                Ok(value * 2)
+            }
+        });
+        let validate = |value: &i32| {
+            if *value >= 0 {
+                Ok(())
+            } else {
+                Err("negative")
+            }
+        };
+        assert_eq!(
+            service.try_invoke_checked(1, validate),
+            Err(CheckedServiceError::Lifecycle(ServiceError::NotRunning))
+        );
+        service.start().unwrap();
+        assert_eq!(
+            service.try_invoke_checked(-1, validate),
+            Err(CheckedServiceError::Validation("negative"))
+        );
+        assert_eq!(service.try_invoke_checked(3, validate), Ok(6));
+        assert_eq!(
+            service.try_invoke_checked(7, validate),
+            Err(CheckedServiceError::Execution("execution failed"))
+        );
+        service.dispose().unwrap();
+        assert_eq!(
+            service.try_invoke_checked(1, validate),
+            Err(CheckedServiceError::Lifecycle(ServiceError::Disposed))
+        );
+    }
+
+    #[test]
+    fn try_checked_contention_does_not_run_validation() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::mpsc;
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let service = Arc::new(Service::new(move |value: i32| {
+            if value == 1 {
+                entered_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+            }
+            Ok::<_, ()>(value)
+        }));
+        service.start().unwrap();
+        let running = Arc::clone(&service);
+        let worker = thread::spawn(move || running.invoke(1));
+        entered_rx.recv().unwrap();
+        let validation_calls = AtomicUsize::new(0);
+        assert_eq!(
+            service.try_invoke_checked(2, |_: &i32| {
+                validation_calls.fetch_add(1, Ordering::SeqCst);
+                Ok::<(), ()>(())
+            }),
+            Err(CheckedServiceError::Lifecycle(ServiceError::Busy))
+        );
+        assert_eq!(validation_calls.load(Ordering::SeqCst), 0);
+        release_tx.send(()).unwrap();
+        assert_eq!(worker.join().unwrap(), Ok(1));
+        assert_eq!(
+            service.try_invoke_checked(2, |_: &i32| {
+                validation_calls.fetch_add(1, Ordering::SeqCst);
+                Ok::<(), ()>(())
+            }),
+            Ok(2)
+        );
+        assert_eq!(validation_calls.load(Ordering::SeqCst), 1);
     }
 
 }
