@@ -203,14 +203,21 @@ mod tests {
             }
         });
         let validate = |value: &i32| {
-            if *value >= 0 { Ok(()) } else { Err("negative") }
+            if *value >= 0 {
+                Ok(())
+            } else {
+                Err("negative")
+            }
         };
         assert_eq!(
             service.invoke_checked(-1, validate),
             Err(CheckedServiceError::Lifecycle(ServiceError::NotRunning))
         );
         service.start().unwrap();
-        assert_eq!(service.invoke_checked(-1, validate), Err(CheckedServiceError::Validation("negative")));
+        assert_eq!(
+            service.invoke_checked(-1, validate),
+            Err(CheckedServiceError::Validation("negative"))
+        );
         assert_eq!(service.invoke_checked(3, validate), Ok((3, 1)));
         service.dispose().unwrap();
         assert_eq!(
