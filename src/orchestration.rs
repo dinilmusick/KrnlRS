@@ -172,6 +172,24 @@ impl<O, E> FunctionalityOrchestration<O, E> {
         Ok(results)
     }
 
+    /// Executes the dependency closure but exposes only explicitly requested outputs.
+    /// This prevents callers from accidentally receiving intermediate node values.
+    /// Duplicate target IDs are collapsed by the ordered result map.
+    pub fn run_for_outputs(
+        &self,
+        targets: &[&str],
+    ) -> Result<BTreeMap<String, O>, OrchestrationError<E>>
+    where
+        O: Clone,
+    {
+        let outputs = self.run_for(targets)?;
+        let requested: BTreeSet<&str> = targets.iter().copied().collect();
+        Ok(outputs
+            .into_iter()
+            .filter(|(id, _)| requested.contains(id.as_str()))
+            .collect())
+    }
+
     /// Preflight the complete graph before invoking any node callback.
     pub fn run(&self) -> Result<BTreeMap<String, O>, OrchestrationError<E>>
     where
@@ -392,6 +410,37 @@ mod tests {
             Err(OrchestrationError::MissingTarget("missing".into()))
         );
         assert_eq!(valid.execution_layers_for(&[]).unwrap(), Vec::<Vec<String>>::new());
+    }
+
+    #[test]
+    fn selected_outputs_do_not_expose_intermediate_values() {
+        let mut graph = FunctionalityOrchestration::new();
+        graph.add(node("secret", &[], |_| Ok(41))).unwrap();
+        graph.add(node("public", &["secret"], |inputs| Ok(inputs["secret"] + 1))).unwrap();
+        graph.add(node("unrelated", &[], |_| panic!("must not run"))).unwrap();
+        let outputs = graph.run_for_outputs(&["public", "public"]).unwrap();
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs["public"], 42);
+        assert!(!outputs.contains_key("secret"));
+        assert_eq!(graph.run_for_outputs(&[]).unwrap().len(), 0);
+        assert_eq!(
+            graph.run_for_outputs(&["missing"]),
+            Err(OrchestrationError::MissingTarget("missing".into()))
+        );
+    }
+
+    #[test]
+    fn selected_outputs_fail_closed_before_callbacks() {
+        let mut graph = FunctionalityOrchestration::new();
+        graph.add(node("public", &[], |_| panic!("must not run"))).unwrap();
+        graph.add(node("broken", &["absent"], |_| Ok(1))).unwrap();
+        assert_eq!(
+            graph.run_for_outputs(&["public"]),
+            Err(OrchestrationError::MissingDependency {
+                node: "broken".into(),
+                dependency: "absent".into(),
+            })
+        );
     }
 
     #[test]
