@@ -123,6 +123,35 @@ impl<O, E> FunctionalityOrchestration<O, E> {
         Ok(order.into_iter().filter(|id| required.contains(id)).collect())
     }
 
+    /// Plans dependency barriers only for requested outputs and their ancestors.
+    /// Validates the entire graph first, matching run_for's fail-closed policy.
+    /// Nodes in each layer are independent and sorted by ID; no callback runs.
+    pub fn execution_layers_for(
+        &self,
+        targets: &[&str],
+    ) -> Result<Vec<Vec<String>>, OrchestrationError<E>> {
+        let order = self.execution_order_for(targets)?;
+        let mut depths: BTreeMap<String, usize> = BTreeMap::new();
+        let mut layers: Vec<Vec<String>> = Vec::new();
+        for id in order {
+            let depth = self.nodes[&id]
+                .dependencies
+                .iter()
+                .map(|dep| depths[dep] + 1)
+                .max()
+                .unwrap_or(0);
+            if layers.len() <= depth {
+                layers.resize_with(depth + 1, Vec::new);
+            }
+            layers[depth].push(id.clone());
+            depths.insert(id, depth);
+        }
+        for layer in &mut layers {
+            layer.sort();
+        }
+        Ok(layers)
+    }
+
     /// Executes only requested nodes and their dependencies, with scoped inputs.
     pub fn run_for(&self, targets: &[&str]) -> Result<BTreeMap<String, O>, OrchestrationError<E>>
     where
@@ -312,6 +341,57 @@ mod tests {
         assert_eq!(graph.run_for(&["good"]), Err(OrchestrationError::MissingDependency {
             node: "bad".into(), dependency: "missing".into(),
         }));
+    }
+
+    #[test]
+    fn targeted_layers_include_only_ancestors_and_never_execute() {
+        let calls = Arc::new(Mutex::new(0usize));
+        let mut graph = FunctionalityOrchestration::new();
+        for (id, deps) in [
+            ("root", vec![]),
+            ("left", vec!["root"]),
+            ("right", vec!["root"]),
+            ("join", vec!["left", "right"]),
+            ("unrelated", vec![]),
+        ] {
+            let calls = Arc::clone(&calls);
+            graph.add(node(id, &deps, move |_| {
+                *calls.lock().unwrap() += 1;
+                Ok(1)
+            })).unwrap();
+        }
+        assert_eq!(
+            graph.execution_layers_for(&["join"]).unwrap(),
+            vec![
+                vec!["root".to_string()],
+                vec!["left".to_string(), "right".to_string()],
+                vec!["join".to_string()],
+            ]
+        );
+        assert_eq!(*calls.lock().unwrap(), 0);
+        assert_eq!(graph.run_for(&["join"]).unwrap().len(), 4);
+        assert_eq!(*calls.lock().unwrap(), 4);
+    }
+
+    #[test]
+    fn targeted_layers_fail_closed_on_invalid_graph_and_missing_target() {
+        let mut graph = FunctionalityOrchestration::new();
+        graph.add(node("good", &[], |_| Ok(1))).unwrap();
+        graph.add(node("broken", &["absent"], |_| panic!("must not run"))).unwrap();
+        assert_eq!(
+            graph.execution_layers_for(&["good"]),
+            Err(OrchestrationError::MissingDependency {
+                node: "broken".into(),
+                dependency: "absent".into(),
+            })
+        );
+        let mut valid = FunctionalityOrchestration::new();
+        valid.add(node("good", &[], |_| Ok(1))).unwrap();
+        assert_eq!(
+            valid.execution_layers_for(&["missing"]),
+            Err(OrchestrationError::MissingTarget("missing".into()))
+        );
+        assert_eq!(valid.execution_layers_for(&[]).unwrap(), Vec::<Vec<String>>::new());
     }
 
     #[test]
