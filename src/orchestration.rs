@@ -16,6 +16,7 @@ pub enum OrchestrationError<E> {
     DuplicateNode(String),
     MissingDependency { node: String, dependency: String },
     Cycle,
+    MissingTarget(String),
     Execution { node: String, error: E },
 }
 
@@ -96,6 +97,50 @@ impl<O, E> FunctionalityOrchestration<O, E> {
             depths.insert(id, depth);
         }
         Ok(layers)
+    }
+
+
+    /// Plans the transitive dependency closure of the requested outputs.
+    /// The entire graph is validated first; unrelated callbacks are never invoked.
+    pub fn execution_order_for(
+        &self,
+        targets: &[&str],
+    ) -> Result<Vec<String>, OrchestrationError<E>> {
+        let order = self.execution_order()?;
+        let mut required = BTreeSet::new();
+        let mut pending = Vec::new();
+        for target in targets {
+            if !self.nodes.contains_key(*target) {
+                return Err(OrchestrationError::MissingTarget((*target).to_string()));
+            }
+            pending.push((*target).to_string());
+        }
+        while let Some(id) = pending.pop() {
+            if required.insert(id.clone()) {
+                pending.extend(self.nodes[&id].dependencies.iter().cloned());
+            }
+        }
+        Ok(order.into_iter().filter(|id| required.contains(id)).collect())
+    }
+
+    /// Executes only requested nodes and their dependencies, with scoped inputs.
+    pub fn run_for(&self, targets: &[&str]) -> Result<BTreeMap<String, O>, OrchestrationError<E>>
+    where
+        O: Clone,
+    {
+        let order = self.execution_order_for(targets)?;
+        let mut results = BTreeMap::new();
+        for id in order {
+            let node = &self.nodes[&id];
+            let inputs = node.dependencies.iter()
+                .map(|dep| (dep.clone(), results[dep].clone()))
+                .collect();
+            let output = (node.execute)(&inputs).map_err(|error| {
+                OrchestrationError::Execution { node: id.clone(), error }
+            })?;
+            results.insert(id, output);
+        }
+        Ok(results)
     }
 
     /// Preflight the complete graph before invoking any node callback.
@@ -235,6 +280,38 @@ mod tests {
         cycle.add(node("a", &["b"], |_| panic!("must not execute"))).unwrap();
         cycle.add(node("b", &["a"], |_| panic!("must not execute"))).unwrap();
         assert_eq!(cycle.execution_layers(), Err(OrchestrationError::Cycle));
+    }
+
+
+    #[test]
+    fn targeted_execution_skips_unrelated_callbacks() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let mut graph = FunctionalityOrchestration::new();
+        for (id, deps) in [("root", vec![]), ("selected", vec!["root"]), ("other", vec![])] {
+            let calls = Arc::clone(&calls);
+            graph.add(node(id, &deps, move |inputs| {
+                calls.lock().unwrap().push(id);
+                Ok(inputs.len() as i32 + 1)
+            })).unwrap();
+        }
+        assert_eq!(graph.execution_order_for(&["selected"]).unwrap(), vec!["root", "selected"]);
+        assert!(calls.lock().unwrap().is_empty());
+        let outputs = graph.run_for(&["selected"]).unwrap();
+        assert_eq!(outputs.len(), 2);
+        assert_eq!(outputs["selected"], 2);
+        assert_eq!(*calls.lock().unwrap(), vec!["root", "selected"]);
+        assert_eq!(graph.run_for(&["absent"]), Err(OrchestrationError::MissingTarget("absent".into())));
+        assert_eq!(calls.lock().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn targeted_execution_validates_unrelated_invalid_edges() {
+        let mut graph = FunctionalityOrchestration::new();
+        graph.add(node("good", &[], |_| Ok(1))).unwrap();
+        graph.add(node("bad", &["missing"], |_| panic!("must not run"))).unwrap();
+        assert_eq!(graph.run_for(&["good"]), Err(OrchestrationError::MissingDependency {
+            node: "bad".into(), dependency: "missing".into(),
+        }));
     }
 
     #[test]
