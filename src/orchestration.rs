@@ -74,6 +74,30 @@ impl<O, E> FunctionalityOrchestration<O, E> {
         Ok(order)
     }
 
+
+    /// Returns deterministic dependency barriers for potential parallel execution.
+    /// Nodes in the same layer have no dependencies on one another. Planning
+    /// does not execute callbacks or change the graph.
+    pub fn execution_layers(&self) -> Result<Vec<Vec<String>>, OrchestrationError<E>> {
+        let order = self.execution_order()?;
+        let mut depths: BTreeMap<String, usize> = BTreeMap::new();
+        let mut layers: Vec<Vec<String>> = Vec::new();
+        for id in order {
+            let depth = self.nodes[&id]
+                .dependencies
+                .iter()
+                .map(|dep| depths[dep] + 1)
+                .max()
+                .unwrap_or(0);
+            if layers.len() <= depth {
+                layers.resize_with(depth + 1, Vec::new);
+            }
+            layers[depth].push(id.clone());
+            depths.insert(id, depth);
+        }
+        Ok(layers)
+    }
+
     /// Preflight the complete graph before invoking any node callback.
     pub fn run(&self) -> Result<BTreeMap<String, O>, OrchestrationError<E>>
     where
@@ -159,6 +183,58 @@ mod tests {
         graph.add(node("self", &["self"], |_| panic!("must not execute"))).unwrap();
         assert_eq!(graph.execution_order(), Err(OrchestrationError::Cycle));
         assert_eq!(graph.run(), Err(OrchestrationError::Cycle));
+    }
+
+
+    #[test]
+    fn layers_expose_parallel_readiness_without_executing_callbacks() {
+        let calls = Arc::new(Mutex::new(0usize));
+        let mut graph = FunctionalityOrchestration::new();
+        for (id, dependencies) in [
+            ("root", vec![]),
+            ("independent", vec![]),
+            ("left", vec!["root"]),
+            ("right", vec!["root"]),
+            ("join", vec!["left", "right"]),
+            ("tail", vec!["join"]),
+        ] {
+            let calls = Arc::clone(&calls);
+            graph
+                .add(node(id, &dependencies, move |_| {
+                    *calls.lock().unwrap() += 1;
+                    Ok(1)
+                }))
+                .unwrap();
+        }
+        assert_eq!(
+            graph.execution_layers().unwrap(),
+            vec![
+                vec!["independent".to_string(), "root".to_string()],
+                vec!["left".to_string(), "right".to_string()],
+                vec!["join".to_string()],
+                vec!["tail".to_string()],
+            ]
+        );
+        assert_eq!(*calls.lock().unwrap(), 0);
+        assert_eq!(graph.run().unwrap().len(), 6);
+        assert_eq!(*calls.lock().unwrap(), 6);
+    }
+
+    #[test]
+    fn layers_reject_invalid_graphs_before_execution() {
+        let mut missing = FunctionalityOrchestration::new();
+        missing.add(node("a", &["absent"], |_| panic!("must not execute"))).unwrap();
+        assert_eq!(
+            missing.execution_layers(),
+            Err(OrchestrationError::MissingDependency {
+                node: "a".into(),
+                dependency: "absent".into(),
+            })
+        );
+        let mut cycle = FunctionalityOrchestration::new();
+        cycle.add(node("a", &["b"], |_| panic!("must not execute"))).unwrap();
+        cycle.add(node("b", &["a"], |_| panic!("must not execute"))).unwrap();
+        assert_eq!(cycle.execution_layers(), Err(OrchestrationError::Cycle));
     }
 
     #[test]
