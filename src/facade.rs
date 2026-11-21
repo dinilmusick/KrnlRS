@@ -70,6 +70,7 @@ struct Phase {
 pub struct ServiceFacade<H: LifecycleHooks> {
     pub definition: ServiceDescriptor,
     hooks: Mutex<H>,
+    lifecycle_lock: Mutex<()>,
     phase: Mutex<Phase>,
     drain: Condvar,
     queue: KrnlQueue,
@@ -101,6 +102,7 @@ impl<H: LifecycleHooks> ServiceFacade<H> {
         Ok(Self {
             definition,
             hooks: Mutex::new(hooks),
+            lifecycle_lock: Mutex::new(()),
             phase: Mutex::new(Phase {
                 lifecycle: Lifecycle::new(),
                 disposed: false,
@@ -154,6 +156,7 @@ impl<H: LifecycleHooks> ServiceFacade<H> {
     }
 
     pub fn start(&self) -> Result<(), FacadeError<H::Error>> {
+        let _lock = self.lifecycle_lock.lock().map_err(|_| FacadeError::Poisoned)?;
         {
             let phase = self.lock_phase()?;
             if phase.disposed {
@@ -244,6 +247,7 @@ impl<H: LifecycleHooks> ServiceFacade<H> {
     }
 
     pub fn dispose(&self) -> Result<(), FacadeError<H::Error>> {
+        let _lock = self.lifecycle_lock.lock().map_err(|_| FacadeError::Poisoned)?;
         if self.status()?.1 {
             return Ok(());
         }
