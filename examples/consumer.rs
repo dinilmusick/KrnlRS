@@ -1,4 +1,6 @@
 //! Compileable independent public API consumer.
+use krnlrs::facade::{InvocationOptions, NoopHooks, ServiceFacade};
+use krnlrs::queue::QueueOptions;
 use krnlrs::protocol::{MemoryTransport, Request, Response, ServiceProxy};
 use krnlrs::registry::{ServiceDescriptor, ServiceRegistry};
 use krnlrs::{Functionality, Service};
@@ -33,4 +35,28 @@ fn main() {
     assert_eq!(output.body, vec![3]);
     let mut callable = |input: i32| -> Result<i32, &'static str> { Ok(input + 1) };
     assert_eq!(Functionality::execute(&mut callable, 10), Ok(11));
+    let runtime = ServiceFacade::new(
+        ServiceDescriptor::new("counter", "1"),
+        NoopHooks,
+        QueueOptions::default(),
+        4,
+    ).unwrap();
+    runtime.start().unwrap();
+    let counted = runtime.invoke(
+        "increment",
+        41i32,
+        InvocationOptions::default(),
+        |_| Ok::<_, &'static str>(()),
+        |value, context| {
+            assert!(!context.is_cancelled());
+            Ok::<_, &'static str>(value + 1)
+        },
+        |_| Ok::<_, &'static str>(()),
+    );
+    assert_eq!(counted, Ok(42));
+    runtime.stop().unwrap();
+    runtime.restart().unwrap();
+    runtime.dispose().unwrap();
+    assert!(runtime.start().is_err());
+
 }

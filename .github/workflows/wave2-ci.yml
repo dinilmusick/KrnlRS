@@ -35,5 +35,9 @@ jobs:
             echo 'Expected invalid manifest to be rejected' >&2
             exit 1
           fi
-      - name: External consumer example
-        run: cargo check --example consumer
+      - name: External consumer example build and runtime
+        run: |
+          cargo check --example consumer
+          cargo run --example consumer
+      - name: Portable consumer runtime
+        run: cargo run --no-default-features --example portable_consumer
