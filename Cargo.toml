@@ -1,0 +1,13 @@
+[package]
+name = "krnlrs"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Rust counterpart of portable KrnlTS service runtime contracts"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = []

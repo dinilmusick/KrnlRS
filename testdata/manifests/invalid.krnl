@@ -1,0 +1,4 @@
+service clock 1.0
+service clock 2.0
+depends clock missing
+invalid syntax

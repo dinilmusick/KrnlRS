@@ -1,0 +1,6 @@
+# within-service capability and dependency validation
+service clock 1.0
+service storage 1.0
+depends clock storage
+capability clock midi
+capability storage write
