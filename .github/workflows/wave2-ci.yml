@@ -28,5 +28,12 @@ jobs:
         run: cargo check --no-default-features --lib
       - name: Alloc-only external consumer
         run: cargo check --no-default-features --example portable_consumer
+      - name: CLI valid and invalid manifest smoke
+        run: |
+          cargo run --bin krnl -- validate testdata/manifests/valid.krnl
+          if cargo run --bin krnl -- validate testdata/manifests/invalid.krnl; then
+            echo 'Expected invalid manifest to be rejected' >&2
+            exit 1
+          fi
       - name: External consumer example
         run: cargo check --example consumer
