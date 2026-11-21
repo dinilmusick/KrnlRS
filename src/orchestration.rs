@@ -161,7 +161,7 @@ impl<O, E> FunctionalityOrchestration<O, E> {
         O: Clone,
     {
         let order = self.execution_order_for(targets)?;
-        let mut results = BTreeMap::new();
+        let mut results: BTreeMap<String, O> = BTreeMap::new();
         for id in order {
             let node = &self.nodes[&id];
             let inputs = node
@@ -203,7 +203,7 @@ impl<O, E> FunctionalityOrchestration<O, E> {
         O: Clone,
     {
         let order = self.execution_order()?;
-        let mut results = BTreeMap::new();
+        let mut results: BTreeMap<String, O> = BTreeMap::new();
         for id in order {
             let node = &self.nodes[&id];
             let inputs = node
