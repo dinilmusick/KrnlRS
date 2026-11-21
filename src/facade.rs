@@ -54,6 +54,13 @@ pub enum InvokeError<H, V, E> {
     TelemetryPoisoned,
 }
 
+/// Queue policy and trace correlation for one typed invocation.
+#[derive(Debug, Clone, Default)]
+pub struct InvocationOptions {
+    pub job: JobOptions,
+    pub correlation_id: Option<String>,
+}
+
 struct Phase {
     lifecycle: Lifecycle,
     disposed: bool,
@@ -290,8 +297,7 @@ impl<H: LifecycleHooks> ServiceFacade<H> {
         &self,
         name: &str,
         input: I,
-        options: JobOptions,
-        correlation_id: Option<String>,
+        options: InvocationOptions,
         validate_input: IV,
         mut handler: F,
         validate_output: OV,
@@ -304,7 +310,7 @@ impl<H: LifecycleHooks> ServiceFacade<H> {
     {
         let _running = self.enter().map_err(InvokeError::Lifecycle)?;
         let started = Instant::now();
-        let result = self.queue.execute(options, |context| {
+        let result = self.queue.execute(options.job, |context| {
             validate_input(&input).map_err(InvocationFailure::Input)?;
             let output = handler(input.clone(), context).map_err(InvocationFailure::Execution)?;
             validate_output(&output).map_err(InvocationFailure::Output)?;
@@ -315,7 +321,7 @@ impl<H: LifecycleHooks> ServiceFacade<H> {
             .map_err(|_| InvokeError::TelemetryPoisoned)?
             .record(InvocationTrace {
                 operation: name.to_owned(),
-                correlation_id,
+                correlation_id: options.correlation_id,
                 elapsed: started.elapsed(),
                 succeeded: result.is_ok(),
             });
@@ -349,8 +355,7 @@ mod tests {
         let out = facade.invoke(
             "tick",
             5i32,
-            JobOptions::default(),
-            Some("corr-a".into()),
+            InvocationOptions { job: JobOptions::default(), correlation_id: Some("corr-a".into()) },
             |value| if *value >= 0 { Ok(()) } else { Err("negative") },
             |value, _| Ok::<_, &'static str>(value + 1),
             |value| if *value <= 100 { Ok(()) } else { Err("large") },
@@ -370,8 +375,7 @@ mod tests {
         let denied = facade.invoke(
             "tick",
             1,
-            JobOptions::default(),
-            None,
+            InvocationOptions::default(),
             |_| Ok::<_, &'static str>(()),
             |value, _| Ok::<_, &'static str>(value),
             |_| Ok::<_, &'static str>(()),
@@ -420,8 +424,7 @@ mod tests {
             worker.invoke(
                 "slow",
                 1,
-                JobOptions::default(),
-                None,
+                InvocationOptions::default(),
                 |_| Ok::<_, ()>(()),
                 |value, _| {
                     tx.send(()).unwrap();

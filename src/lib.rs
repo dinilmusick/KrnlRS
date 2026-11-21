@@ -8,7 +8,6 @@ extern crate alloc;
 pub mod portable;
 
 #[cfg(feature = "std")]
-#[cfg(feature = "std")]
 pub mod events;
 #[cfg(feature = "std")]
 pub mod facade;
