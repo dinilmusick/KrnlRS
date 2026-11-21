@@ -73,6 +73,6 @@ mod tests {
         assert!(rx_other.try_recv().is_err());
         drop(rx);
         assert_eq!(bus.publish("changed", 13).unwrap(), 0);
-        assert_eq!(bus.subscribe(" "), Err(EventError::EmptyTopic));
+        assert_eq!(bus.subscribe(" ").err(), Some(EventError::EmptyTopic));
     }
 }

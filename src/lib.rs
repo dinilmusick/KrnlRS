@@ -12,6 +12,7 @@ pub mod registry;
 pub mod state;
 pub mod telemetry;
 pub mod validation;
+pub mod queue;
 
 use std::sync::Mutex;
 
