@@ -4,6 +4,9 @@
 #![forbid(unsafe_code)]
 
 pub mod orchestration;
+pub mod lifecycle;
+pub mod ownership;
+pub mod telemetry;
 
 use std::sync::Mutex;
 
