@@ -8,11 +8,11 @@ pub mod lifecycle;
 pub mod orchestration;
 pub mod ownership;
 pub mod protocol;
+pub mod queue;
 pub mod registry;
 pub mod state;
 pub mod telemetry;
 pub mod validation;
-pub mod queue;
 
 use std::sync::Mutex;
 

@@ -31,7 +31,8 @@ impl ExecutionContext {
     }
 
     pub fn is_timed_out(&self) -> bool {
-        self.deadline.is_some_and(|deadline| Instant::now() >= deadline)
+        self.deadline
+            .is_some_and(|deadline| Instant::now() >= deadline)
     }
 
     pub fn check(&self) -> Result<(), ExecutionControlError> {
@@ -164,7 +165,11 @@ impl KrnlQueue {
         Ok((state.active, state.waiting.len()))
     }
 
-    fn admission<E>(&self, context: &ExecutionContext, priority: i32) -> Result<Permit, QueueError<E>> {
+    fn admission<E>(
+        &self,
+        context: &ExecutionContext,
+        priority: i32,
+    ) -> Result<Permit, QueueError<E>> {
         let mut state = self.shared.state.lock().map_err(|_| QueueError::Poisoned)?;
         if state.closed {
             return Err(QueueError::Closed);
@@ -175,7 +180,9 @@ impl KrnlQueue {
         let id = state.next_id;
         state.next_id = state.next_id.wrapping_add(1);
         state.waiting.push(Waiting { id, priority });
-        state.waiting.sort_by(|a, b| b.priority.cmp(&a.priority).then(a.id.cmp(&b.id)));
+        state
+            .waiting
+            .sort_by(|a, b| b.priority.cmp(&a.priority).then(a.id.cmp(&b.id)));
         loop {
             let result = if state.closed {
                 Some(QueueError::Closed)
@@ -191,7 +198,10 @@ impl KrnlQueue {
                 self.shared.cv.notify_all();
                 return Err(error);
             }
-            if state.waiting.first().is_some_and(|waiting| waiting.id == id)
+            if state
+                .waiting
+                .first()
+                .is_some_and(|waiting| waiting.id == id)
                 && state.active < self.shared.concurrency
             {
                 state.waiting.remove(0);
@@ -216,7 +226,9 @@ impl KrnlQueue {
     where
         F: FnMut(&ExecutionContext) -> Result<T, E>,
     {
-        let deadline = options.timeout.and_then(|duration| Instant::now().checked_add(duration));
+        let deadline = options
+            .timeout
+            .and_then(|duration| Instant::now().checked_add(duration));
         let context = ExecutionContext {
             cancellation: options.cancellation,
             deadline,
@@ -264,16 +276,25 @@ mod tests {
         let queue = KrnlQueue::new(QueueOptions::default()).unwrap();
         let mut attempts = 0;
         let result: Result<i32, QueueError<&'static str>> = queue.execute(
-            JobOptions { retries: 2, ..Default::default() },
+            JobOptions {
+                retries: 2,
+                ..Default::default()
+            },
             |_| {
                 attempts += 1;
-                if attempts < 3 { Err("retry") } else { Ok(42) }
+                if attempts < 3 {
+                    Err("retry")
+                } else {
+                    Ok(42)
+                }
             },
         );
         assert_eq!(result, Ok(42));
         assert_eq!(attempts, 3);
         assert_eq!(
-            queue.execute(JobOptions::default(), |_| -> Result<(), &str> { Err("failed") }),
+            queue.execute(JobOptions::default(), |_| -> Result<(), &str> {
+                Err("failed")
+            }),
             Err(QueueError::Execution("failed"))
         );
     }
@@ -284,12 +305,18 @@ mod tests {
         let token = CancellationToken::default();
         token.cancel();
         let result: Result<(), QueueError<()>> = queue.execute(
-            JobOptions { cancellation: token, ..Default::default() },
+            JobOptions {
+                cancellation: token,
+                ..Default::default()
+            },
             |_| panic!("cancelled callback must never run"),
         );
         assert_eq!(result, Err(QueueError::Cancelled));
         let result: Result<(), QueueError<()>> = queue.execute(
-            JobOptions { timeout: Some(Duration::from_millis(1)), ..Default::default() },
+            JobOptions {
+                timeout: Some(Duration::from_millis(1)),
+                ..Default::default()
+            },
             |_| {
                 thread::sleep(Duration::from_millis(5));
                 Ok(())
@@ -300,7 +327,13 @@ mod tests {
 
     #[test]
     fn bounded_concurrency_and_shutdown() {
-        let queue = Arc::new(KrnlQueue::new(QueueOptions { concurrency: 2, max_waiting: 16 }).unwrap());
+        let queue = Arc::new(
+            KrnlQueue::new(QueueOptions {
+                concurrency: 2,
+                max_waiting: 16,
+            })
+            .unwrap(),
+        );
         let active = Arc::new(AtomicUsize::new(0));
         let peak = Arc::new(AtomicUsize::new(0));
         let mut handles = Vec::new();
@@ -322,6 +355,9 @@ mod tests {
         assert!(peak.load(Ordering::SeqCst) <= 2);
         assert_eq!(queue.counts(), Ok((0, 0)));
         queue.close().unwrap();
-        assert_eq!(queue.execute(JobOptions::default(), |_| Ok::<_, ()>(1)), Err(QueueError::Closed));
+        assert_eq!(
+            queue.execute(JobOptions::default(), |_| Ok::<_, ()>(1)),
+            Err(QueueError::Closed)
+        );
     }
 }
