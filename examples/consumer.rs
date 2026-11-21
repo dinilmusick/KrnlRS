@@ -1,5 +1,5 @@
 //! Compileable independent public API consumer.
-use krnlrs::protocol::{MemoryTransport, Response, ServiceProxy};
+use krnlrs::protocol::{MemoryTransport, Request, Response, ServiceProxy};
 use krnlrs::registry::{ServiceDescriptor, ServiceRegistry};
 use krnlrs::{Functionality, Service};
 
@@ -21,7 +21,7 @@ fn main() {
 
     let proxy = ServiceProxy::new(
         "increment",
-        MemoryTransport(|request| -> Result<Response, &'static str> {
+        MemoryTransport(|request: Request| -> Result<Response, &'static str> {
             Ok(Response {
                 body: request.body,
                 correlation_id: request.correlation_id,
