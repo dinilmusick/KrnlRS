@@ -2,19 +2,37 @@
 //! Service-owned execution only; cross-service orchestration belongs to Skipo.
 //! No Kloks, Floks, Skipo, or Krusbl dependencies.
 #![forbid(unsafe_code)]
+#![cfg_attr(not(feature = "std"), no_std)]
+extern crate alloc;
 
+pub mod portable;
+
+#[cfg(feature = "std")]
+#[cfg(feature = "std")]
 pub mod events;
+#[cfg(feature = "std")]
 pub mod facade;
+#[cfg(feature = "std")]
 pub mod lifecycle;
+#[cfg(feature = "std")]
 pub mod orchestration;
+#[cfg(feature = "std")]
 pub mod ownership;
+#[cfg(feature = "std")]
 pub mod protocol;
+#[cfg(feature = "std")]
 pub mod queue;
+#[cfg(feature = "std")]
 pub mod registry;
+#[cfg(feature = "std")]
 pub mod state;
+#[cfg(feature = "std")]
 pub mod telemetry;
+#[cfg(feature = "std")]
 pub mod validation;
 
+#[cfg(feature = "std")]
+mod std_api {
 use std::sync::Mutex;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -410,3 +428,7 @@ mod tests {
         assert_eq!(validation_calls.load(Ordering::SeqCst), 1);
     }
 }
+
+}
+#[cfg(feature = "std")]
+pub use std_api::*;

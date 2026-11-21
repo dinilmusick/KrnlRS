@@ -24,5 +24,9 @@ jobs:
         run: cargo test --all-targets
       - name: Documentation tests
         run: cargo test --doc
+      - name: Alloc-only portable compile
+        run: cargo check --no-default-features --lib
+      - name: Alloc-only external consumer
+        run: cargo check --no-default-features --example portable_consumer
       - name: External consumer example
         run: cargo check --example consumer

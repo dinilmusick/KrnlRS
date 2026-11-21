@@ -1,16 +1,7 @@
 //! Deterministic service lifecycle aligned with the KrnlTS core contract.
 //! The lifecycle is deliberately transport- and platform-independent.
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum LifecycleState {
-    Uninitialized,
-    Initializing,
-    Ready,
-    Starting,
-    Running,
-    Stopping,
-    Stopped,
-}
+pub use crate::portable::LifecycleState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LifecycleError {
