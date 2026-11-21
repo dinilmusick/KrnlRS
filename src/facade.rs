@@ -87,7 +87,9 @@ impl<H: LifecycleHooks> ServiceFacade<H> {
         telemetry_capacity: usize,
     ) -> Result<Self, FacadeError<H::Error>> {
         let mut registry = ServiceRegistry::new();
-        registry.register(definition.clone()).map_err(FacadeError::InvalidDefinition)?;
+        registry
+            .register(definition.clone())
+            .map_err(FacadeError::InvalidDefinition)?;
         let queue = KrnlQueue::new(queue_options).map_err(|_| FacadeError::InvalidQueue)?;
         Ok(Self {
             definition,
@@ -120,12 +122,25 @@ impl<H: LifecycleHooks> ServiceFacade<H> {
         if phase.lifecycle.state() != LifecycleState::Uninitialized {
             return Err(FacadeError::NotRunning(phase.lifecycle.state()));
         }
-        phase.lifecycle.transition(LifecycleState::Initializing).map_err(FacadeError::Lifecycle)?;
-        let action = self.hooks.lock().map_err(|_| FacadeError::Poisoned)?.on_initialize();
+        phase
+            .lifecycle
+            .transition(LifecycleState::Initializing)
+            .map_err(FacadeError::Lifecycle)?;
+        let action = self
+            .hooks
+            .lock()
+            .map_err(|_| FacadeError::Poisoned)?
+            .on_initialize();
         match action {
-            Ok(()) => phase.lifecycle.transition(LifecycleState::Ready).map_err(FacadeError::Lifecycle),
+            Ok(()) => phase
+                .lifecycle
+                .transition(LifecycleState::Ready)
+                .map_err(FacadeError::Lifecycle),
             Err(error) => {
-                phase.lifecycle.transition(LifecycleState::Uninitialized).map_err(FacadeError::Lifecycle)?;
+                phase
+                    .lifecycle
+                    .transition(LifecycleState::Uninitialized)
+                    .map_err(FacadeError::Lifecycle)?;
                 Err(FacadeError::Hook(error))
             }
         }
@@ -152,12 +167,25 @@ impl<H: LifecycleHooks> ServiceFacade<H> {
             LifecycleState::Ready | LifecycleState::Stopped => {}
             state => return Err(FacadeError::NotRunning(state)),
         }
-        phase.lifecycle.transition(LifecycleState::Starting).map_err(FacadeError::Lifecycle)?;
-        let action = self.hooks.lock().map_err(|_| FacadeError::Poisoned)?.on_start();
+        phase
+            .lifecycle
+            .transition(LifecycleState::Starting)
+            .map_err(FacadeError::Lifecycle)?;
+        let action = self
+            .hooks
+            .lock()
+            .map_err(|_| FacadeError::Poisoned)?
+            .on_start();
         match action {
-            Ok(()) => phase.lifecycle.transition(LifecycleState::Running).map_err(FacadeError::Lifecycle),
+            Ok(()) => phase
+                .lifecycle
+                .transition(LifecycleState::Running)
+                .map_err(FacadeError::Lifecycle),
             Err(error) => {
-                phase.lifecycle.transition(LifecycleState::Ready).map_err(FacadeError::Lifecycle)?;
+                phase
+                    .lifecycle
+                    .transition(LifecycleState::Ready)
+                    .map_err(FacadeError::Lifecycle)?;
                 Err(FacadeError::Hook(error))
             }
         }
@@ -174,15 +202,28 @@ impl<H: LifecycleHooks> ServiceFacade<H> {
         if phase.lifecycle.state() != LifecycleState::Running {
             return Err(FacadeError::NotRunning(phase.lifecycle.state()));
         }
-        phase.lifecycle.transition(LifecycleState::Stopping).map_err(FacadeError::Lifecycle)?;
+        phase
+            .lifecycle
+            .transition(LifecycleState::Stopping)
+            .map_err(FacadeError::Lifecycle)?;
         while phase.active != 0 {
             phase = self.drain.wait(phase).map_err(|_| FacadeError::Poisoned)?;
         }
-        let action = self.hooks.lock().map_err(|_| FacadeError::Poisoned)?.on_stop();
+        let action = self
+            .hooks
+            .lock()
+            .map_err(|_| FacadeError::Poisoned)?
+            .on_stop();
         match action {
-            Ok(()) => phase.lifecycle.transition(LifecycleState::Stopped).map_err(FacadeError::Lifecycle),
+            Ok(()) => phase
+                .lifecycle
+                .transition(LifecycleState::Stopped)
+                .map_err(FacadeError::Lifecycle),
             Err(error) => {
-                phase.lifecycle.transition(LifecycleState::Running).map_err(FacadeError::Lifecycle)?;
+                phase
+                    .lifecycle
+                    .transition(LifecycleState::Running)
+                    .map_err(FacadeError::Lifecycle)?;
                 Err(FacadeError::Hook(error))
             }
         }
@@ -206,7 +247,11 @@ impl<H: LifecycleHooks> ServiceFacade<H> {
         while phase.active != 0 {
             phase = self.drain.wait(phase).map_err(|_| FacadeError::Poisoned)?;
         }
-        self.hooks.lock().map_err(|_| FacadeError::Poisoned)?.on_dispose().map_err(FacadeError::Hook)?;
+        self.hooks
+            .lock()
+            .map_err(|_| FacadeError::Poisoned)?
+            .on_dispose()
+            .map_err(FacadeError::Hook)?;
         phase.disposed = true;
         self.queue.close().map_err(|_| FacadeError::InvalidQueue)
     }
@@ -224,12 +269,19 @@ impl<H: LifecycleHooks> ServiceFacade<H> {
     }
 
     pub fn set_telemetry_mode(&self, mode: TelemetryMode) -> Result<(), FacadeError<H::Error>> {
-        self.telemetry.lock().map_err(|_| FacadeError::Poisoned)?.set_mode(mode);
+        self.telemetry
+            .lock()
+            .map_err(|_| FacadeError::Poisoned)?
+            .set_mode(mode);
         Ok(())
     }
 
     pub fn telemetry_snapshot(&self) -> Result<TelemetrySnapshot, FacadeError<H::Error>> {
-        Ok(self.telemetry.lock().map_err(|_| FacadeError::Poisoned)?.snapshot())
+        Ok(self
+            .telemetry
+            .lock()
+            .map_err(|_| FacadeError::Poisoned)?
+            .snapshot())
     }
 
     /// Typed invocation with validated inputs/outputs, context, retry, queue and telemetry.
@@ -279,7 +331,13 @@ mod tests {
     use std::time::Duration;
 
     fn facade() -> ServiceFacade<NoopHooks> {
-        ServiceFacade::new(ServiceDescriptor::new("clock", "1"), NoopHooks, QueueOptions::default(), 2).unwrap()
+        ServiceFacade::new(
+            ServiceDescriptor::new("clock", "1"),
+            NoopHooks,
+            QueueOptions::default(),
+            2,
+        )
+        .unwrap()
     }
 
     #[test]
@@ -298,16 +356,32 @@ mod tests {
             |value| if *value <= 100 { Ok(()) } else { Err("large") },
         );
         assert_eq!(out, Ok(6));
-        assert_eq!(facade.telemetry_snapshot().unwrap().operations["tick"].successes, 1);
-        assert_eq!(facade.telemetry_snapshot().unwrap().recent[0].correlation_id.as_deref(), Some("corr-a"));
+        assert_eq!(
+            facade.telemetry_snapshot().unwrap().operations["tick"].successes,
+            1
+        );
+        assert_eq!(
+            facade.telemetry_snapshot().unwrap().recent[0]
+                .correlation_id
+                .as_deref(),
+            Some("corr-a")
+        );
         facade.stop().unwrap();
         let denied = facade.invoke(
-            "tick", 1, JobOptions::default(), None,
+            "tick",
+            1,
+            JobOptions::default(),
+            None,
             |_| Ok::<_, &'static str>(()),
             |value, _| Ok::<_, &'static str>(value),
             |_| Ok::<_, &'static str>(()),
         );
-        assert_eq!(denied, Err(InvokeError::Lifecycle(FacadeError::NotRunning(LifecycleState::Stopped))));
+        assert_eq!(
+            denied,
+            Err(InvokeError::Lifecycle(FacadeError::NotRunning(
+                LifecycleState::Stopped
+            )))
+        );
         facade.restart().unwrap();
         facade.dispose().unwrap();
         assert_eq!(facade.start(), Err(FacadeError::Disposed));
@@ -317,12 +391,20 @@ mod tests {
     struct RejectStart;
     impl LifecycleHooks for RejectStart {
         type Error = &'static str;
-        fn on_start(&mut self) -> Result<(), Self::Error> { Err("rejected") }
+        fn on_start(&mut self) -> Result<(), Self::Error> {
+            Err("rejected")
+        }
     }
 
     #[test]
     fn failed_start_restores_ready_and_cannot_invoke() {
-        let facade = ServiceFacade::new(ServiceDescriptor::new("broken", "1"), RejectStart, QueueOptions::default(), 1).unwrap();
+        let facade = ServiceFacade::new(
+            ServiceDescriptor::new("broken", "1"),
+            RejectStart,
+            QueueOptions::default(),
+            1,
+        )
+        .unwrap();
         assert_eq!(facade.start(), Err(FacadeError::Hook("rejected")));
         assert_eq!(facade.status(), Ok((LifecycleState::Ready, false)));
         assert_eq!(facade.start(), Err(FacadeError::Hook("rejected")));
@@ -336,7 +418,10 @@ mod tests {
         let worker = facade.clone();
         let join = thread::spawn(move || {
             worker.invoke(
-                "slow", 1, JobOptions::default(), None,
+                "slow",
+                1,
+                JobOptions::default(),
+                None,
                 |_| Ok::<_, ()>(()),
                 |value, _| {
                     tx.send(()).unwrap();
