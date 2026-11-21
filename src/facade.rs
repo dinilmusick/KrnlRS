@@ -355,7 +355,10 @@ mod tests {
         let out = facade.invoke(
             "tick",
             5i32,
-            InvocationOptions { job: JobOptions::default(), correlation_id: Some("corr-a".into()) },
+            InvocationOptions {
+                job: JobOptions::default(),
+                correlation_id: Some("corr-a".into()),
+            },
             |value| if *value >= 0 { Ok(()) } else { Err("negative") },
             |value, _| Ok::<_, &'static str>(value + 1),
             |value| if *value <= 100 { Ok(()) } else { Err("large") },
