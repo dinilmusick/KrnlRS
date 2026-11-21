@@ -156,7 +156,10 @@ impl<H: LifecycleHooks> ServiceFacade<H> {
     }
 
     pub fn start(&self) -> Result<(), FacadeError<H::Error>> {
-        let _lock = self.lifecycle_lock.lock().map_err(|_| FacadeError::Poisoned)?;
+        let _lock = self
+            .lifecycle_lock
+            .lock()
+            .map_err(|_| FacadeError::Poisoned)?;
         {
             let phase = self.lock_phase()?;
             if phase.disposed {
@@ -247,7 +250,10 @@ impl<H: LifecycleHooks> ServiceFacade<H> {
     }
 
     pub fn dispose(&self) -> Result<(), FacadeError<H::Error>> {
-        let _lock = self.lifecycle_lock.lock().map_err(|_| FacadeError::Poisoned)?;
+        let _lock = self
+            .lifecycle_lock
+            .lock()
+            .map_err(|_| FacadeError::Poisoned)?;
         if self.status()?.1 {
             return Ok(());
         }
