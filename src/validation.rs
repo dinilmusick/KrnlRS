@@ -29,10 +29,7 @@ pub fn validate_manifest(text: &str) -> Result<ServiceRegistry, Vec<Diagnostic>>
                         message: format!("service {id:?} is defined more than once"),
                     });
                 } else {
-                    definitions.insert(
-                        (*id).into(),
-                        (ServiceDescriptor::new(*id, *version), line),
-                    );
+                    definitions.insert((*id).into(), (ServiceDescriptor::new(*id, *version), line));
                 }
             }
             ["capability" | "depends", id, target] => {
@@ -41,7 +38,8 @@ pub fn validate_manifest(text: &str) -> Result<ServiceRegistry, Vec<Diagnostic>>
             _ => errors.push(Diagnostic {
                 line,
                 code: "invalid_syntax",
-                message: "expected 'service ID VERSION', 'capability ID NAME', or 'depends ID ID'".into(),
+                message: "expected 'service ID VERSION', 'capability ID NAME', or 'depends ID ID'"
+                    .into(),
             }),
         }
     }
@@ -106,8 +104,12 @@ mod tests {
         assert_eq!(registry.with_capability("read").len(), 1);
         let invalid = "service app 1\nservice app 2\ndepends app missing\nunknown op\n";
         let errors = validate_manifest(invalid).unwrap_err();
-        assert!(errors.iter().any(|e| e.line == 2 && e.code == "duplicate_service"));
-        assert!(errors.iter().any(|e| e.line == 4 && e.code == "invalid_syntax"));
+        assert!(errors
+            .iter()
+            .any(|e| e.line == 2 && e.code == "duplicate_service"));
+        assert!(errors
+            .iter()
+            .any(|e| e.line == 4 && e.code == "invalid_syntax"));
         assert!(errors.iter().any(|e| e.code == "missing_dependency"));
     }
 }

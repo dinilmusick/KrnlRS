@@ -92,13 +92,21 @@ mod tests {
         });
         let proxy = ServiceProxy::new("clock", host).unwrap();
         assert_eq!(
-            proxy.invoke("tick", vec![1, 2], Some("trace-1".into())).unwrap(),
+            proxy
+                .invoke("tick", vec![1, 2], Some("trace-1".into()))
+                .unwrap(),
             Response {
                 body: vec![1, 2],
                 correlation_id: Some("trace-1".into())
             }
         );
-        assert_eq!(proxy.invoke("fail", vec![], None), Err(ProxyError::Transport("network")));
-        assert_eq!(proxy.invoke(" ", vec![], None), Err(ProxyError::InvalidOperation));
+        assert_eq!(
+            proxy.invoke("fail", vec![], None),
+            Err(ProxyError::Transport("network"))
+        );
+        assert_eq!(
+            proxy.invoke(" ", vec![], None),
+            Err(ProxyError::InvalidOperation)
+        );
     }
 }

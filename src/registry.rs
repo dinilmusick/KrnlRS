@@ -105,7 +105,13 @@ impl ServiceRegistry {
             Ok(())
         }
         let mut output = Vec::new();
-        visit(self, id, &mut BTreeSet::new(), &mut BTreeSet::new(), &mut output)?;
+        visit(
+            self,
+            id,
+            &mut BTreeSet::new(),
+            &mut BTreeSet::new(),
+            &mut output,
+        )?;
         Ok(output)
     }
 
@@ -128,11 +134,16 @@ mod tests {
         app.dependencies.insert("storage".into());
         app.dependencies.insert("auth".into());
         registry.register(app).unwrap();
-        registry.register(ServiceDescriptor::new("auth", "1")).unwrap();
+        registry
+            .register(ServiceDescriptor::new("auth", "1"))
+            .unwrap();
         let mut storage = ServiceDescriptor::new("storage", "1");
         storage.capabilities.insert("read".into());
         registry.register(storage).unwrap();
-        assert_eq!(registry.resolve_order("app").unwrap(), vec!["auth", "storage", "app"]);
+        assert_eq!(
+            registry.resolve_order("app").unwrap(),
+            vec!["auth", "storage", "app"]
+        );
         assert_eq!(registry.with_capability("read")[0].id, "storage");
         assert!(registry.validate_all().is_ok());
     }
@@ -140,7 +151,9 @@ mod tests {
     #[test]
     fn rejects_duplicates_missing_and_cycles_without_side_effects() {
         let mut registry = ServiceRegistry::new();
-        registry.register(ServiceDescriptor::new("one", "1")).unwrap();
+        registry
+            .register(ServiceDescriptor::new("one", "1"))
+            .unwrap();
         assert_eq!(
             registry.register(ServiceDescriptor::new("one", "2")),
             Err(RegistryError::DuplicateService("one".into()))
@@ -158,6 +171,9 @@ mod tests {
         b.dependencies.insert("a".into());
         registry.register(a).unwrap();
         registry.register(b).unwrap();
-        assert_eq!(registry.resolve_order("a"), Err(RegistryError::DependencyCycle("a".into())));
+        assert_eq!(
+            registry.resolve_order("a"),
+            Err(RegistryError::DependencyCycle("a".into()))
+        );
     }
 }

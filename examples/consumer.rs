@@ -11,15 +11,24 @@ fn main() {
     service.dispose().unwrap();
 
     let mut registry = ServiceRegistry::new();
-    registry.register(ServiceDescriptor::new("increment", "1")).unwrap();
-    assert_eq!(registry.resolve_order("increment").unwrap(), vec!["increment"]);
+    registry
+        .register(ServiceDescriptor::new("increment", "1"))
+        .unwrap();
+    assert_eq!(
+        registry.resolve_order("increment").unwrap(),
+        vec!["increment"]
+    );
 
     let proxy = ServiceProxy::new(
         "increment",
         MemoryTransport(|request| -> Result<Response, &'static str> {
-            Ok(Response { body: request.body, correlation_id: request.correlation_id })
+            Ok(Response {
+                body: request.body,
+                correlation_id: request.correlation_id,
+            })
         }),
-    ).unwrap();
+    )
+    .unwrap();
     let output = proxy.invoke("execute", vec![3], None).unwrap();
     assert_eq!(output.body, vec![3]);
     let mut callable = |input: i32| -> Result<i32, &'static str> { Ok(input + 1) };

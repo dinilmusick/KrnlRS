@@ -22,7 +22,10 @@ fn main() -> ExitCode {
         }
         Err(errors) => {
             for error in errors {
-                eprintln!("{}:{}: {}: {}", args[2], error.line, error.code, error.message);
+                eprintln!(
+                    "{}:{}: {}: {}",
+                    args[2], error.line, error.code, error.message
+                );
             }
             ExitCode::FAILURE
         }

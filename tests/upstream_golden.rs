@@ -37,7 +37,10 @@ fn at_state(target: LifecycleState) -> Lifecycle {
 fn pinned_upstream_all_49_transitions_match_and_reject_without_mutation() {
     let fixture = include_str!("../testdata/upstream-golden/lifecycle.tsv");
     let mut count = 0usize;
-    for row in fixture.lines().filter(|line| !line.starts_with('#') && !line.trim().is_empty()) {
+    for row in fixture
+        .lines()
+        .filter(|line| !line.starts_with('#') && !line.trim().is_empty())
+    {
         let parts: Vec<&str> = row.split('\t').collect();
         assert_eq!(parts.len(), 3);
         let from = state(parts[0]);
@@ -46,7 +49,11 @@ fn pinned_upstream_all_49_transitions_match_and_reject_without_mutation() {
         let mut lifecycle = at_state(from);
         let result = lifecycle.transition(to);
         assert_eq!(result.is_ok(), should_allow, "{row}");
-        assert_eq!(lifecycle.state(), if should_allow { to } else { from }, "{row}");
+        assert_eq!(
+            lifecycle.state(),
+            if should_allow { to } else { from },
+            "{row}"
+        );
         count += 1;
     }
     assert_eq!(count, 49);
