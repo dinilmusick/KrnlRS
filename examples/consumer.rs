@@ -1,7 +1,7 @@
 //! Compileable independent public API consumer.
 use krnlrs::facade::{InvocationOptions, NoopHooks, ServiceFacade};
-use krnlrs::queue::QueueOptions;
 use krnlrs::protocol::{MemoryTransport, Request, Response, ServiceProxy};
+use krnlrs::queue::QueueOptions;
 use krnlrs::registry::{ServiceDescriptor, ServiceRegistry};
 use krnlrs::{Functionality, Service};
 
@@ -40,7 +40,8 @@ fn main() {
         NoopHooks,
         QueueOptions::default(),
         4,
-    ).unwrap();
+    )
+    .unwrap();
     runtime.start().unwrap();
     let counted = runtime.invoke(
         "increment",
@@ -58,5 +59,4 @@ fn main() {
     runtime.restart().unwrap();
     runtime.dispose().unwrap();
     assert!(runtime.start().is_err());
-
 }
