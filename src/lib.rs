@@ -3,10 +3,15 @@
 //! No Kloks, Floks, Skipo, or Krusbl dependencies.
 #![forbid(unsafe_code)]
 
-pub mod lifecycle;
 pub mod orchestration;
+pub mod lifecycle;
 pub mod ownership;
 pub mod telemetry;
+pub mod registry;
+pub mod state;
+pub mod events;
+pub mod protocol;
+pub mod validation;
 
 use std::sync::Mutex;
 
@@ -34,6 +39,7 @@ pub enum CheckedServiceError<V, E> {
     Validation(V),
     Execution(E),
 }
+
 
 /// A single service's typed functionality. Implementations own their validation
 /// and return explicit errors; no cross-service dispatch is performed here.
@@ -123,10 +129,7 @@ impl<F> Service<F> {
             }
         }
         validate(&input).map_err(CheckedServiceError::Validation)?;
-        guard
-            .1
-            .execute(input)
-            .map_err(CheckedServiceError::Execution)
+        guard.1.execute(input).map_err(CheckedServiceError::Execution)
     }
 
     /// Fail-fast invocation for callers that must not wait behind an active
@@ -180,10 +183,7 @@ impl<F> Service<F> {
             }
         }
         validate(&input).map_err(CheckedServiceError::Validation)?;
-        guard
-            .1
-            .execute(input)
-            .map_err(CheckedServiceError::Execution)
+        guard.1.execute(input).map_err(CheckedServiceError::Execution)
     }
 
     pub fn invoke<I, O, E>(&self, input: I) -> Result<O, ServiceError<E>>
@@ -402,4 +402,5 @@ mod tests {
         );
         assert_eq!(validation_calls.load(Ordering::SeqCst), 1);
     }
+
 }
