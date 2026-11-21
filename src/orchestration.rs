@@ -2,8 +2,7 @@
 //! Cross-service dispatch belongs to Skipo, not this module.
 use std::collections::{BTreeMap, BTreeSet};
 
-pub type NodeAction<O, E> =
-    Box<dyn Fn(&BTreeMap<String, O>) -> Result<O, E> + Send + Sync>;
+pub type NodeAction<O, E> = Box<dyn Fn(&BTreeMap<String, O>) -> Result<O, E> + Send + Sync>;
 
 pub struct FunctionNode<O, E> {
     pub id: String,
@@ -28,7 +27,9 @@ pub struct FunctionalityOrchestration<O, E> {
 
 impl<O, E> Default for FunctionalityOrchestration<O, E> {
     fn default() -> Self {
-        Self { nodes: BTreeMap::new() }
+        Self {
+            nodes: BTreeMap::new(),
+        }
     }
 }
 
@@ -52,7 +53,8 @@ impl<O, E> FunctionalityOrchestration<O, E> {
             for dep in &node.dependencies {
                 if !self.nodes.contains_key(dep) {
                     return Err(OrchestrationError::MissingDependency {
-                        node: id.clone(), dependency: dep.clone(),
+                        node: id.clone(),
+                        dependency: dep.clone(),
                     });
                 }
             }
@@ -74,7 +76,6 @@ impl<O, E> FunctionalityOrchestration<O, E> {
         }
         Ok(order)
     }
-
 
     /// Returns deterministic dependency barriers for potential parallel execution.
     /// Nodes in the same layer have no dependencies on one another. Planning
@@ -99,7 +100,6 @@ impl<O, E> FunctionalityOrchestration<O, E> {
         Ok(layers)
     }
 
-
     /// Plans the transitive dependency closure of the requested outputs.
     /// The entire graph is validated first; unrelated callbacks are never invoked.
     pub fn execution_order_for(
@@ -120,7 +120,10 @@ impl<O, E> FunctionalityOrchestration<O, E> {
                 pending.extend(self.nodes[&id].dependencies.iter().cloned());
             }
         }
-        Ok(order.into_iter().filter(|id| required.contains(id)).collect())
+        Ok(order
+            .into_iter()
+            .filter(|id| required.contains(id))
+            .collect())
     }
 
     /// Plans dependency barriers only for requested outputs and their ancestors.
@@ -161,12 +164,16 @@ impl<O, E> FunctionalityOrchestration<O, E> {
         let mut results = BTreeMap::new();
         for id in order {
             let node = &self.nodes[&id];
-            let inputs = node.dependencies.iter()
+            let inputs = node
+                .dependencies
+                .iter()
                 .map(|dep| (dep.clone(), results[dep].clone()))
                 .collect();
-            let output = (node.execute)(&inputs).map_err(|error| {
-                OrchestrationError::Execution { node: id.clone(), error }
-            })?;
+            let output =
+                (node.execute)(&inputs).map_err(|error| OrchestrationError::Execution {
+                    node: id.clone(),
+                    error,
+                })?;
             results.insert(id, output);
         }
         Ok(results)
@@ -199,12 +206,16 @@ impl<O, E> FunctionalityOrchestration<O, E> {
         let mut results = BTreeMap::new();
         for id in order {
             let node = &self.nodes[&id];
-            let inputs = node.dependencies.iter()
+            let inputs = node
+                .dependencies
+                .iter()
                 .map(|dep| (dep.clone(), results[dep].clone()))
                 .collect();
-            let output = (node.execute)(&inputs).map_err(|error| {
-                OrchestrationError::Execution { node: id.clone(), error }
-            })?;
+            let output =
+                (node.execute)(&inputs).map_err(|error| OrchestrationError::Execution {
+                    node: id.clone(),
+                    error,
+                })?;
             results.insert(id, output);
         }
         Ok(results)
@@ -216,8 +227,16 @@ mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
 
-    fn node(id: &str, deps: &[&str], f: impl Fn(&BTreeMap<String, i32>) -> Result<i32, &'static str> + Send + Sync + 'static) -> FunctionNode<i32, &'static str> {
-        FunctionNode { id: id.into(), dependencies: deps.iter().map(|s| (*s).into()).collect(), execute: Box::new(f) }
+    fn node(
+        id: &str,
+        deps: &[&str],
+        f: impl Fn(&BTreeMap<String, i32>) -> Result<i32, &'static str> + Send + Sync + 'static,
+    ) -> FunctionNode<i32, &'static str> {
+        FunctionNode {
+            id: id.into(),
+            dependencies: deps.iter().map(|s| (*s).into()).collect(),
+            execute: Box::new(f),
+        }
     }
 
     #[test]
@@ -226,14 +245,31 @@ mod tests {
         let mut graph = FunctionalityOrchestration::new();
         for (id, deps, value) in [("z", vec!["a"], 3), ("a", vec![], 1), ("b", vec!["a"], 2)] {
             let trace = trace.clone();
-            graph.add(node(id, &deps, move |inputs| {
-                trace.lock().unwrap().push((id, inputs.keys().cloned().collect::<Vec<_>>()));
-                Ok(value)
-            })).unwrap();
+            graph
+                .add(node(id, &deps, move |inputs| {
+                    trace
+                        .lock()
+                        .unwrap()
+                        .push((id, inputs.keys().cloned().collect::<Vec<_>>()));
+                    Ok(value)
+                }))
+                .unwrap();
         }
-        graph.add(node("join", &["b", "z"], |inputs| Ok(inputs.values().sum()))).unwrap();
+        graph
+            .add(node("join", &["b", "z"], |inputs| {
+                Ok(inputs.values().sum())
+            }))
+            .unwrap();
         assert_eq!(graph.run().unwrap()["join"], 5);
-        assert_eq!(trace.lock().unwrap().iter().map(|(id, _)| *id).collect::<Vec<_>>(), vec!["a", "b", "z"]);
+        assert_eq!(
+            trace
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|(id, _)| *id)
+                .collect::<Vec<_>>(),
+            vec!["a", "b", "z"]
+        );
         assert_eq!(trace.lock().unwrap()[1].1, vec!["a".to_string()]);
     }
 
@@ -242,9 +278,20 @@ mod tests {
         let calls = Arc::new(Mutex::new(0));
         let mut graph = FunctionalityOrchestration::new();
         let seen = calls.clone();
-        graph.add(node("a", &[], move |_| { *seen.lock().unwrap() += 1; Ok(1) })).unwrap();
+        graph
+            .add(node("a", &[], move |_| {
+                *seen.lock().unwrap() += 1;
+                Ok(1)
+            }))
+            .unwrap();
         graph.add(node("b", &["absent"], |_| Ok(2))).unwrap();
-        assert_eq!(graph.run(), Err(OrchestrationError::MissingDependency { node: "b".into(), dependency: "absent".into() }));
+        assert_eq!(
+            graph.run(),
+            Err(OrchestrationError::MissingDependency {
+                node: "b".into(),
+                dependency: "absent".into()
+            })
+        );
         assert_eq!(*calls.lock().unwrap(), 0);
         let mut cycle = FunctionalityOrchestration::new();
         cycle.add(node("a", &["b"], |_| Ok(1))).unwrap();
@@ -258,10 +305,12 @@ mod tests {
         let mut graph = FunctionalityOrchestration::new();
         for (id, dependencies) in [("z", vec!["a"]), ("a", vec![]), ("b", vec!["a"])] {
             let calls = Arc::clone(&calls);
-            graph.add(node(id, &dependencies, move |_| {
-                *calls.lock().unwrap() += 1;
-                Ok(1)
-            })).unwrap();
+            graph
+                .add(node(id, &dependencies, move |_| {
+                    *calls.lock().unwrap() += 1;
+                    Ok(1)
+                }))
+                .unwrap();
         }
         assert_eq!(graph.execution_order().unwrap(), vec!["a", "b", "z"]);
         assert_eq!(*calls.lock().unwrap(), 0);
@@ -272,11 +321,12 @@ mod tests {
     #[test]
     fn execution_order_rejects_cycles_without_callbacks() {
         let mut graph = FunctionalityOrchestration::new();
-        graph.add(node("self", &["self"], |_| panic!("must not execute"))).unwrap();
+        graph
+            .add(node("self", &["self"], |_| panic!("must not execute")))
+            .unwrap();
         assert_eq!(graph.execution_order(), Err(OrchestrationError::Cycle));
         assert_eq!(graph.run(), Err(OrchestrationError::Cycle));
     }
-
 
     #[test]
     fn layers_expose_parallel_readiness_without_executing_callbacks() {
@@ -315,7 +365,9 @@ mod tests {
     #[test]
     fn layers_reject_invalid_graphs_before_execution() {
         let mut missing = FunctionalityOrchestration::new();
-        missing.add(node("a", &["absent"], |_| panic!("must not execute"))).unwrap();
+        missing
+            .add(node("a", &["absent"], |_| panic!("must not execute")))
+            .unwrap();
         assert_eq!(
             missing.execution_layers(),
             Err(OrchestrationError::MissingDependency {
@@ -324,30 +376,45 @@ mod tests {
             })
         );
         let mut cycle = FunctionalityOrchestration::new();
-        cycle.add(node("a", &["b"], |_| panic!("must not execute"))).unwrap();
-        cycle.add(node("b", &["a"], |_| panic!("must not execute"))).unwrap();
+        cycle
+            .add(node("a", &["b"], |_| panic!("must not execute")))
+            .unwrap();
+        cycle
+            .add(node("b", &["a"], |_| panic!("must not execute")))
+            .unwrap();
         assert_eq!(cycle.execution_layers(), Err(OrchestrationError::Cycle));
     }
-
 
     #[test]
     fn targeted_execution_skips_unrelated_callbacks() {
         let calls = Arc::new(Mutex::new(Vec::new()));
         let mut graph = FunctionalityOrchestration::new();
-        for (id, deps) in [("root", vec![]), ("selected", vec!["root"]), ("other", vec![])] {
+        for (id, deps) in [
+            ("root", vec![]),
+            ("selected", vec!["root"]),
+            ("other", vec![]),
+        ] {
             let calls = Arc::clone(&calls);
-            graph.add(node(id, &deps, move |inputs| {
-                calls.lock().unwrap().push(id);
-                Ok(inputs.len() as i32 + 1)
-            })).unwrap();
+            graph
+                .add(node(id, &deps, move |inputs| {
+                    calls.lock().unwrap().push(id);
+                    Ok(inputs.len() as i32 + 1)
+                }))
+                .unwrap();
         }
-        assert_eq!(graph.execution_order_for(&["selected"]).unwrap(), vec!["root", "selected"]);
+        assert_eq!(
+            graph.execution_order_for(&["selected"]).unwrap(),
+            vec!["root", "selected"]
+        );
         assert!(calls.lock().unwrap().is_empty());
         let outputs = graph.run_for(&["selected"]).unwrap();
         assert_eq!(outputs.len(), 2);
         assert_eq!(outputs["selected"], 2);
         assert_eq!(*calls.lock().unwrap(), vec!["root", "selected"]);
-        assert_eq!(graph.run_for(&["absent"]), Err(OrchestrationError::MissingTarget("absent".into())));
+        assert_eq!(
+            graph.run_for(&["absent"]),
+            Err(OrchestrationError::MissingTarget("absent".into()))
+        );
         assert_eq!(calls.lock().unwrap().len(), 2);
     }
 
@@ -355,10 +422,16 @@ mod tests {
     fn targeted_execution_validates_unrelated_invalid_edges() {
         let mut graph = FunctionalityOrchestration::new();
         graph.add(node("good", &[], |_| Ok(1))).unwrap();
-        graph.add(node("bad", &["missing"], |_| panic!("must not run"))).unwrap();
-        assert_eq!(graph.run_for(&["good"]), Err(OrchestrationError::MissingDependency {
-            node: "bad".into(), dependency: "missing".into(),
-        }));
+        graph
+            .add(node("bad", &["missing"], |_| panic!("must not run")))
+            .unwrap();
+        assert_eq!(
+            graph.run_for(&["good"]),
+            Err(OrchestrationError::MissingDependency {
+                node: "bad".into(),
+                dependency: "missing".into(),
+            })
+        );
     }
 
     #[test]
@@ -373,10 +446,12 @@ mod tests {
             ("unrelated", vec![]),
         ] {
             let calls = Arc::clone(&calls);
-            graph.add(node(id, &deps, move |_| {
-                *calls.lock().unwrap() += 1;
-                Ok(1)
-            })).unwrap();
+            graph
+                .add(node(id, &deps, move |_| {
+                    *calls.lock().unwrap() += 1;
+                    Ok(1)
+                }))
+                .unwrap();
         }
         assert_eq!(
             graph.execution_layers_for(&["join"]).unwrap(),
@@ -395,7 +470,9 @@ mod tests {
     fn targeted_layers_fail_closed_on_invalid_graph_and_missing_target() {
         let mut graph = FunctionalityOrchestration::new();
         graph.add(node("good", &[], |_| Ok(1))).unwrap();
-        graph.add(node("broken", &["absent"], |_| panic!("must not run"))).unwrap();
+        graph
+            .add(node("broken", &["absent"], |_| panic!("must not run")))
+            .unwrap();
         assert_eq!(
             graph.execution_layers_for(&["good"]),
             Err(OrchestrationError::MissingDependency {
@@ -409,15 +486,24 @@ mod tests {
             valid.execution_layers_for(&["missing"]),
             Err(OrchestrationError::MissingTarget("missing".into()))
         );
-        assert_eq!(valid.execution_layers_for(&[]).unwrap(), Vec::<Vec<String>>::new());
+        assert_eq!(
+            valid.execution_layers_for(&[]).unwrap(),
+            Vec::<Vec<String>>::new()
+        );
     }
 
     #[test]
     fn selected_outputs_do_not_expose_intermediate_values() {
         let mut graph = FunctionalityOrchestration::new();
         graph.add(node("secret", &[], |_| Ok(41))).unwrap();
-        graph.add(node("public", &["secret"], |inputs| Ok(inputs["secret"] + 1))).unwrap();
-        graph.add(node("unrelated", &[], |_| panic!("must not run"))).unwrap();
+        graph
+            .add(node("public", &["secret"], |inputs| {
+                Ok(inputs["secret"] + 1)
+            }))
+            .unwrap();
+        graph
+            .add(node("unrelated", &[], |_| panic!("must not run")))
+            .unwrap();
         let outputs = graph.run_for_outputs(&["public", "public"]).unwrap();
         assert_eq!(outputs.len(), 1);
         assert_eq!(outputs["public"], 42);
@@ -432,7 +518,9 @@ mod tests {
     #[test]
     fn selected_outputs_fail_closed_before_callbacks() {
         let mut graph = FunctionalityOrchestration::new();
-        graph.add(node("public", &[], |_| panic!("must not run"))).unwrap();
+        graph
+            .add(node("public", &[], |_| panic!("must not run")))
+            .unwrap();
         graph.add(node("broken", &["absent"], |_| Ok(1))).unwrap();
         assert_eq!(
             graph.run_for_outputs(&["public"]),
@@ -447,7 +535,15 @@ mod tests {
     fn duplicate_and_execution_failure_are_explicit() {
         let mut graph = FunctionalityOrchestration::new();
         graph.add(node("a", &[], |_| Err("failed"))).unwrap();
-        assert!(matches!(graph.add(node("a", &[], |_| Ok(1))), Err(OrchestrationError::DuplicateNode(id)) if id == "a"));
-        assert_eq!(graph.run(), Err(OrchestrationError::Execution { node: "a".into(), error: "failed" }));
+        assert!(
+            matches!(graph.add(node("a", &[], |_| Ok(1))), Err(OrchestrationError::DuplicateNode(id)) if id == "a")
+        );
+        assert_eq!(
+            graph.run(),
+            Err(OrchestrationError::Execution {
+                node: "a".into(),
+                error: "failed"
+            })
+        );
     }
 }

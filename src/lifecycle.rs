@@ -20,7 +20,11 @@ pub struct LifecycleError {
 
 impl std::fmt::Display for LifecycleError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "invalid service lifecycle transition: {:?} -> {:?}", self.from, self.to)
+        write!(
+            f,
+            "invalid service lifecycle transition: {:?} -> {:?}",
+            self.from, self.to
+        )
     }
 }
 
@@ -39,7 +43,9 @@ impl Default for Lifecycle {
 
 impl Lifecycle {
     pub const fn new() -> Self {
-        Self { state: LifecycleState::Uninitialized }
+        Self {
+            state: LifecycleState::Uninitialized,
+        }
     }
 
     pub const fn state(&self) -> LifecycleState {
@@ -62,7 +68,10 @@ impl Lifecycle {
                 | (Stopped, Starting)
         );
         if !allowed {
-            return Err(LifecycleError { from: self.state, to: next });
+            return Err(LifecycleError {
+                from: self.state,
+                to: next,
+            });
         }
         self.state = next;
         Ok(())
@@ -108,7 +117,15 @@ mod tests {
         use LifecycleState::*;
         // Canonical KrnlTS packages/core/src/lifecycle/LifecycleManager.ts,
         // including three error-handler rollback paths.
-        let states = [Uninitialized, Initializing, Ready, Starting, Running, Stopping, Stopped];
+        let states = [
+            Uninitialized,
+            Initializing,
+            Ready,
+            Starting,
+            Running,
+            Stopping,
+            Stopped,
+        ];
         for from in states {
             for to in states {
                 let mut lifecycle = Lifecycle { state: from };

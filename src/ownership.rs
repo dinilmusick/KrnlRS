@@ -27,8 +27,13 @@ pub struct FunctionalityOrchestration {
 impl FunctionalityOrchestration {
     pub fn new(service: impl Into<String>) -> Result<Self, ContractError> {
         let service = service.into();
-        if service.trim().is_empty() { return Err(ContractError::EmptyIdentifier); }
-        Ok(Self { service, operations: BTreeMap::new() })
+        if service.trim().is_empty() {
+            return Err(ContractError::EmptyIdentifier);
+        }
+        Ok(Self {
+            service,
+            operations: BTreeMap::new(),
+        })
     }
 
     pub fn register(&mut self, operation: Functionality) -> Result<(), ContractError> {
@@ -37,7 +42,8 @@ impl FunctionalityOrchestration {
         }
         if operation.service != self.service {
             return Err(ContractError::ForeignService {
-                expected: self.service.clone(), actual: operation.service,
+                expected: self.service.clone(),
+                actual: operation.service,
             });
         }
         if self.operations.contains_key(&operation.name) {
@@ -48,7 +54,10 @@ impl FunctionalityOrchestration {
     }
 
     /// Validate a plan before execution. Order and repeated invocations are preserved.
-    pub fn validate_plan<'a>(&self, steps: impl IntoIterator<Item = &'a str>) -> Result<Vec<String>, ContractError> {
+    pub fn validate_plan<'a>(
+        &self,
+        steps: impl IntoIterator<Item = &'a str>,
+    ) -> Result<Vec<String>, ContractError> {
         let mut validated = Vec::new();
         for step in steps {
             if !self.operations.contains_key(step) {
@@ -71,31 +80,70 @@ mod tests {
     #[test]
     fn accepts_local_operations_and_ordered_repetition() {
         let mut registry = FunctionalityOrchestration::new("clock").unwrap();
-        registry.register(Functionality { service: "clock".into(), name: "tick".into() }).unwrap();
-        registry.register(Functionality { service: "clock".into(), name: "reset".into() }).unwrap();
-        assert_eq!(registry.validate_plan(["tick", "reset", "tick"]).unwrap(), vec!["tick", "reset", "tick"]);
+        registry
+            .register(Functionality {
+                service: "clock".into(),
+                name: "tick".into(),
+            })
+            .unwrap();
+        registry
+            .register(Functionality {
+                service: "clock".into(),
+                name: "reset".into(),
+            })
+            .unwrap();
+        assert_eq!(
+            registry.validate_plan(["tick", "reset", "tick"]).unwrap(),
+            vec!["tick", "reset", "tick"]
+        );
     }
 
     #[test]
     fn rejects_cross_service_composition() {
         let mut registry = FunctionalityOrchestration::new("clock").unwrap();
-        assert_eq!(registry.register(Functionality { service: "storage".into(), name: "read".into() }),
-            Err(ContractError::ForeignService { expected: "clock".into(), actual: "storage".into() }));
+        assert_eq!(
+            registry.register(Functionality {
+                service: "storage".into(),
+                name: "read".into()
+            }),
+            Err(ContractError::ForeignService {
+                expected: "clock".into(),
+                actual: "storage".into()
+            })
+        );
     }
 
     #[test]
     fn rejects_duplicates_and_unknown_steps() {
         let mut registry = FunctionalityOrchestration::new("clock").unwrap();
-        let op = Functionality { service: "clock".into(), name: "tick".into() };
+        let op = Functionality {
+            service: "clock".into(),
+            name: "tick".into(),
+        };
         registry.register(op.clone()).unwrap();
-        assert_eq!(registry.register(op), Err(ContractError::DuplicateFunctionality("tick".into())));
-        assert_eq!(registry.validate_plan(["missing"]), Err(ContractError::UnknownFunctionality("missing".into())));
+        assert_eq!(
+            registry.register(op),
+            Err(ContractError::DuplicateFunctionality("tick".into()))
+        );
+        assert_eq!(
+            registry.validate_plan(["missing"]),
+            Err(ContractError::UnknownFunctionality("missing".into()))
+        );
     }
 
     #[test]
     fn rejects_blank_identifiers() {
-        assert_eq!(FunctionalityOrchestration::new("  "), Err(ContractError::EmptyIdentifier));
+        assert_eq!(
+            FunctionalityOrchestration::new("  "),
+            Err(ContractError::EmptyIdentifier)
+        );
         let mut registry = FunctionalityOrchestration::new("clock").unwrap();
-        assert_eq!(registry.register(Functionality { service: "clock".into(), name: " ".into() }), Err(ContractError::EmptyIdentifier));
+        assert_eq!(
+            registry.register(Functionality {
+                service: "clock".into(),
+                name: " ".into()
+            }),
+            Err(ContractError::EmptyIdentifier)
+        );
     }
 }

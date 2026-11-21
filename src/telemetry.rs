@@ -185,7 +185,10 @@ mod tests {
         telemetry.record(trace("alpha", false));
         telemetry.record(trace("beta", true));
         let alpha = telemetry.functionality("alpha").unwrap();
-        assert_eq!((alpha.invocations, alpha.successes, alpha.failures), (2, 1, 1));
+        assert_eq!(
+            (alpha.invocations, alpha.successes, alpha.failures),
+            (2, 1, 1)
+        );
         assert_eq!(alpha.total_duration, Duration::from_millis(20));
         let snapshot = telemetry.snapshot();
         assert_eq!(snapshot.recent.len(), 2);
@@ -215,10 +218,19 @@ mod tests {
         assert_eq!(ok, Ok(42));
         assert_eq!(error, Err("failed"));
         let metrics = telemetry.functionality("calculate").unwrap();
-        assert_eq!((metrics.invocations, metrics.successes, metrics.failures), (2, 1, 1));
+        assert_eq!(
+            (metrics.invocations, metrics.successes, metrics.failures),
+            (2, 1, 1)
+        );
         let snapshot = telemetry.snapshot();
-        assert_eq!(snapshot.recent[0].correlation_id.as_deref(), Some("trace-42"));
-        assert_eq!(snapshot.recent[1].correlation_id.as_deref(), Some("trace-43"));
+        assert_eq!(
+            snapshot.recent[0].correlation_id.as_deref(),
+            Some("trace-42")
+        );
+        assert_eq!(
+            snapshot.recent[1].correlation_id.as_deref(),
+            Some("trace-43")
+        );
         assert!(!snapshot.recent[1].succeeded);
     }
 
@@ -259,7 +271,10 @@ mod tests {
         assert!(telemetry.snapshot().operations.is_empty());
         assert_eq!(telemetry.status(), TelemetryMode::Standard);
         telemetry.record(trace("after-reset", true));
-        assert_eq!(telemetry.functionality("after-reset").unwrap().invocations, 1);
+        assert_eq!(
+            telemetry.functionality("after-reset").unwrap().invocations,
+            1
+        );
     }
 
     #[test]
@@ -274,6 +289,4 @@ mod tests {
         assert_eq!(calls, 1);
         assert!(telemetry.snapshot().operations.is_empty());
     }
-
-
 }
