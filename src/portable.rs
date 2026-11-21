@@ -86,7 +86,10 @@ impl Identifier {
         if raw.trim().is_empty() {
             return Err(IdentifierError::Empty);
         }
-        if !raw.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.') {
+        if !raw
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
+        {
             return Err(IdentifierError::InvalidCharacter);
         }
         Ok(Self(raw.to_string()))
@@ -111,8 +114,14 @@ mod tests {
     #[test]
     fn portable_contracts_reject_unusable_identifiers() {
         assert_eq!(Identifier::parse(" "), Err(IdentifierError::Empty));
-        assert_eq!(Identifier::parse("http://"), Err(IdentifierError::InvalidCharacter));
-        assert_eq!(Identifier::parse("storage.read").unwrap().as_str(), "storage.read");
+        assert_eq!(
+            Identifier::parse("http://"),
+            Err(IdentifierError::InvalidCharacter)
+        );
+        assert_eq!(
+            Identifier::parse("storage.read").unwrap().as_str(),
+            "storage.read"
+        );
     }
 
     #[test]
