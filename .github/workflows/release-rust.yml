@@ -23,7 +23,7 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - name: Test portable crate
-        run: cargo test --all-targets --no-default-features
+        run: cargo test --all-targets
       - name: Check crates.io packaging
         run: cargo publish --dry-run
 
