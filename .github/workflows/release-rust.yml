@@ -1,0 +1,113 @@
+name: Rust crates.io release
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      bootstrap:
+        description: 'Publish the first crate version with a scoped token (main only)'
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test portable crate
+        run: cargo test --all-targets
+      - name: Check crates.io packaging
+        run: cargo publish --dry-run
+
+  bootstrap:
+    needs: validate
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.bootstrap == true && vars.CRATES_IO_BOOTSTRAP_READY == 'true' }}
+    runs-on: ubuntu-latest
+    environment: crates-bootstrap
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Require exact main and scoped registry token
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_BOOTSTRAP_TOKEN }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$(git ls-remote origin refs/heads/main | cut -f1)"
+          test -n "$CARGO_REGISTRY_TOKEN"
+      - name: Publish initial crate from GitHub Actions only
+        uses: release-plz/action@v0.5
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_BOOTSTRAP_TOKEN }}
+
+  publish:
+    needs: validate
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.CRATES_IO_TRUSTED_PUBLISHING_READY == 'true' }}
+    runs-on: ubuntu-latest
+    environment: crates-io
+    permissions:
+      contents: write
+      id-token: write
+    concurrency:
+      group: rust-crate-publish-${{ github.repository }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Require the validated current main revision
+        run: test "$(git rev-parse HEAD)" = "$(git ls-remote origin refs/heads/main | cut -f1)"
+      - name: Publish unpublished version using crates.io OIDC
+        uses: release-plz/action@v0.5
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  prepare-next-version:
+    needs: [validate, publish]
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.CRATES_IO_TRUSTED_PUBLISHING_READY == 'true' && vars.RELEASE_PLZ_APP_READY == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    concurrency:
+      group: rust-crate-release-pr-${{ github.repository }}
+      cancel-in-progress: false
+    steps:
+      - name: Mint short-lived release-PR GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.RELEASE_PLZ_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLZ_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Require the validated current main revision
+        run: test "$(git rev-parse HEAD)" = "$(git ls-remote origin refs/heads/main | cut -f1)"
+      - name: Create semver and changelog PR with independently running checks
+        uses: release-plz/action@v0.5
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
