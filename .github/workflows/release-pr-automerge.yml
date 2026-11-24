@@ -1,0 +1,56 @@
+name: CI-verified release-plz PR auto-merge
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/release-pr-automerge.yml'
+      - 'scripts/merge_verified_release_pr.py'
+      - 'scripts/test_merge_verified_release_pr.py'
+  workflow_run:
+    workflows: ['Rust crates.io release', 'KrnlRS contract CI', 'KrnlRS Wave 2 full checks']
+    types: [completed]
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Test release-PR merge safety without credentials
+        run: python3 -B -m unittest discover -s scripts -p 'test_merge_verified_release_pr.py'
+
+  merge:
+    if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.RELEASE_PLZ_APP_READY == 'true' && vars.CRATES_IO_TRUSTED_PUBLISHING_READY == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    concurrency:
+      group: verified-release-plz-merge-${{ github.repository }}
+      cancel-in-progress: false
+    steps:
+      - name: Mint repository-scoped GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.RELEASE_PLZ_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLZ_APP_PRIVATE_KEY }}
+          permission-actions: read
+          permission-contents: write
+          permission-pull-requests: write
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Test verified merge policy offline
+        run: python3 -B -m unittest discover -s scripts -p 'test_merge_verified_release_pr.py'
+      - name: Merge only if all required PR-triggered workflows passed at same immutable SHA
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REQUIRED_RELEASE_CHECKS: '["Rust crates.io release","KrnlRS contract CI","KrnlRS Wave 2 full checks"]'
+        run: python3 -B scripts/merge_verified_release_pr.py
