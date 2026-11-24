@@ -20,7 +20,7 @@ Check the crates.io crate page and exact publisher config; disable `CRATES_IO_BO
 
 Configure GitHub environment `crates-io`, restricted to `main`, matching the OIDC Trusted Publisher. The `publish` job obtains a short-lived token through OIDC—**no reusable crates.io token or environment secret**. After a validated merge, release-plz publishes unpublished versions, tags and creates releases.
 
-For automatic version-changelog pull requests with real CI triggers (not suppressed GitHub bot PRs), install a least-privilege GitHub App with Contents/Pull requests write permissions. Configure `RELEASE_PLZ_APP_ID` (repository variable), `RELEASE_PLZ_APP_PRIVATE_KEY` (GitHub Actions secret), `RELEASE_PLZ_APP_READY=true` (repository variable). The workflow mints short-lived installation tokens; it never embeds a personal token.
+For automatic version-changelog pull requests with real CI triggers (not suppressed GitHub bot PRs), install a least-privilege GitHub App with **Actions read, Contents write and Pull requests write** permissions. Configure `RELEASE_PLZ_APP_ID` (repository variable), `RELEASE_PLZ_APP_PRIVATE_KEY` (GitHub Actions secret), `RELEASE_PLZ_APP_READY=true` (repository variable). The workflow mints short-lived installation tokens; it never embeds a personal token.
 
 Release PR merges must be subject to required CI checks. Set up branch protection / approved auto-merge policy separately. `release-plz` follows Conventional Commits (`fix:`, `feat:`, `feat!:`). An unpublished version is **not** evidence of a successful registry release.
 
