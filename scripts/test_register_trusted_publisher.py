@@ -24,7 +24,7 @@ class BootstrapTests(unittest.TestCase):
             (200, {"github_configs": []}), (200, {"github_config": record})]) as api:
             mod.ensure_publisher("gutrs", "fake", "dinilmusick/GutRS")
             self.assertEqual(api.call_count, 2)
-            self.assertEqual(api.call_args.kwargs["payload"], {"github_config": record} if "payload" in api.call_args.kwargs else api.call_args.args[2])
+            self.assertEqual(api.call_args.args[2], {"github_config": record})
 
     def test_conflicting_environment_fails_closed(self):
         record = mod.publisher_record("frnlrs", "dinilmusick/FrnlRS")
